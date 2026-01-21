@@ -1,11 +1,11 @@
-# Rocket Backend Project
+# Axum Backend Project
 
 ## Project Overview
 
-This is a Rust-based web backend application built with the Rocket web framework. The project implements a simple blog post management system with SQLite database integration. Key features include:
+This is a Rust-based web backend application built with the Axum web framework. The project implements a blog post management system with PostgreSQL database integration. Key features include:
 
 - REST API endpoints for health checking and retrieving blog posts
-- SQLite database for data persistence
+- PostgreSQL database for data persistence
 - Structured architecture with separation of concerns (models, routes, services, database layer)
 - Built with Rust 2024 edition
 
@@ -13,25 +13,28 @@ This is a Rust-based web backend application built with the Rocket web framework
 
 The project follows a modular architecture with the following components:
 
-- **Main Application (`src/main.rs`)**: Initializes the Rocket web server, establishes database connection, and mounts routes
-- **Database Layer (`src/database.rs`)**: Handles SQLite database connection and creates the `posts` table schema
-- **Models (`src/models/`)**: Defines data structures (currently only `Post`)
+- **Main Application (`src/main.rs`)**: Initializes the Axum web server, establishes database connection, and mounts routes
+- **Database Layer (`src/database.rs`)**: Handles PostgreSQL database connection using tokio-postgres
+- **Models (`src/models/`)**: Defines data structures (Post, User, Response)
 - **Routes (`src/routes/`)**: Contains HTTP endpoint handlers
 - **Services (`src/services/`)**: Implements business logic for data operations
 
 ### Dependencies
 
-- `rocket`: Web framework for routing and HTTP handling
-- `rusqlite`: SQLite database client with bundled support
+- `axum`: Web framework for routing and HTTP handling
+- `tokio-postgres`: PostgreSQL database client
 - `serde`: Serialization/deserialization framework
 - `chrono`: Date/time handling with UTC support
-- `parking_lot`: Advanced synchronization primitives (Mutex)
+- `uuid`: UUID generation and handling
+- `tower-http`: HTTP middleware including CORS support
+- `dotenvy`: Environment variable loading
 
 ## Building and Running
 
 ### Prerequisites
 - Rust toolchain (edition 2024)
 - Cargo package manager
+- PostgreSQL database server
 
 ### Build Commands
 ```bash
@@ -48,11 +51,19 @@ cargo run
 cargo test
 ```
 
-### Running the Application
-The application will create a `database.db` SQLite file in the project root when started. The server listens on the default Rocket port (typically 8000) and exposes the following endpoints:
+### Environment Variables
+Create a `.env` file in the project root with the following variables:
+```
+DATABASE_URL=host=localhost user=postgres password=postgres dbname=axumbackend
+PORT=8000
+```
 
-- `GET /health`: Health check endpoint returning "OK"
-- `GET /posts`: Retrieves all blog posts from the database
+### Running the Application
+The application connects to a PostgreSQL database specified by the DATABASE_URL environment variable. The server listens on the port specified by the PORT environment variable (defaults to 8000) and exposes the following endpoints:
+
+- `GET /` and `GET /v1/health`: Health check endpoints returning status information
+- `GET /v1/posts`: Retrieves all blog posts from the database
+- `GET /v1/posts/random?limit=N`: Retrieves random blog posts with an optional limit parameter
 
 ## Development Conventions
 
@@ -60,32 +71,48 @@ The application will create a `database.db` SQLite file in the project root when
 - Modules are organized by concern (models, routes, services, database)
 - Each module has its own file or directory
 - Route handlers delegate business logic to service functions
-- Database connections are managed through Rocket's state system using a Mutex-wrapped Connection
+- Database connections are managed through Axum's state system using Arc-wrapped Client
 
 ### Data Model
 The `Post` model includes:
-- `id`: Integer primary key
+- `id`: UUID primary key
 - `title`: String representing the post title
 - `body`: String containing the post content
-- `published_at`: DateTime in UTC format
+- `created_by`: UUID referencing the user who created the post
+- `slug`: URL-friendly identifier for the post
+- `created_at`: DateTime in UTC format
+- `creator`: Associated User object
 
-### Error Handling
-The application uses Rust's Result type for error handling, with some unwrapping in the route handlers that could be improved for production use.
+The `User` model includes:
+- `id`: UUID primary key
+- `username`: String representing the user's name
+
+### Response Format
+API responses follow a consistent structure using `ApiResponse<T>`:
+- `success`: Boolean indicating if the request was successful
+- `data`: Optional field containing the response data
+- `meta`: Metadata including total count, limit, and offset for pagination
 
 ## File Structure
 ```
-rocketbackend/
+axumbackend/
 ├── Cargo.toml          # Project manifest and dependencies
 ├── Cargo.lock          # Dependency lock file
-├── database.db         # SQLite database file (generated)
+├── database.db         # SQLite database file (generated) - Note: Project actually uses PostgreSQL
+├── Dockerfile          # Docker configuration for building and deploying
+├── .dockerignore       # Files to ignore during Docker build
+├── .gitignore          # Files to ignore by Git
 ├── GEMINI.md           # Gemini-specific documentation
 ├── QWEN.md             # Qwen-specific documentation
+├── AGENTS.md           # Documentation for AI agents
 ├── src/
 │   ├── main.rs         # Application entry point
 │   ├── database.rs     # Database connection and setup
 │   ├── models/
 │   │   ├── mod.rs      # Models module declaration
-│   │   └── post.rs     # Post data model
+│   │   ├── post.rs     # Post data model
+│   │   ├── user.rs     # User data model
+│   │   └── response.rs # API response wrapper
 │   ├── routes/
 │   │   ├── mod.rs      # Routes module declaration
 │   │   ├── health.rs   # Health check endpoint
@@ -94,6 +121,22 @@ rocketbackend/
 │       ├── mod.rs      # Services module declaration
 │       └── post.rs     # Posts business logic
 └── target/             # Build artifacts (generated)
+```
+
+## Docker Deployment
+
+The project includes a multi-stage Dockerfile that:
+1. Builds the application in a Rust Alpine container
+2. Creates a minimal production image with only necessary runtime dependencies
+3. Runs the application as a non-root user for security
+
+To build and run with Docker:
+```bash
+# Build the Docker image
+docker build -t axumbackend .
+
+# Run the container
+docker run -p 8000:8000 -e DATABASE_URL="..." axumbackend
 ```
 
 ## Potential Improvements
