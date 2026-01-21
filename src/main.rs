@@ -13,6 +13,11 @@ use tower_http::cors::CorsLayer;
 async fn main() {
     dotenvy::dotenv().ok();
 
+    let port = std::env::var("PORT")
+        .unwrap_or_else(|_| "8000".to_string())
+        .parse::<u16>()
+        .expect("PORT must be a valid number");
+
     let db_conn = database::connect()
         .await
         .expect("failed to connect to database");
@@ -24,7 +29,8 @@ async fn main() {
         .with_state(Arc::new(db_conn))
         .layer(CorsLayer::permissive());
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    let addr = format!("0.0.0.0:{}", port);
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    println!("Server listening on {}", addr);
     axum::serve(listener, app).await.unwrap();
-    println!("Server listening on 0.0.0.0:8001");
 }
