@@ -9,7 +9,6 @@
 
 # Build artifacts
 target/
-Cargo.lock
 
 # Database
 *.db
