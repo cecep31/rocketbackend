@@ -22,14 +22,14 @@ RUN cargo build --release
 FROM alpine:3.19 AS production
 
 # Install runtime dependencies
-RUN apk add --no-cache libpq openssl ca-certificates
+RUN apk add --no-cache libpq openssl ca-certificates binutils
 
 # Create non-root user
 RUN addgroup -g 1000 app && adduser -u 1000 -G app -s /bin/sh -D app
 
 # Copy binary from builder and strip it
-COPY --from=builder /build/target/release/rocketbackend /usr/local/bin/
-RUN strip /usr/local/bin/rocketbackend
+COPY --from=builder /build/target/release/axumbackend /usr/local/bin/
+RUN strip /usr/local/bin/axumbackend
 
 # Switch to non-root user
 USER app
@@ -38,4 +38,4 @@ USER app
 EXPOSE 8000
 
 # Run the application
-CMD ["rocketbackend"]
+CMD ["axumbackend"]
