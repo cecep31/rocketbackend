@@ -23,6 +23,7 @@ async fn main() {
         .expect("failed to connect to database");
 
     let app = Router::new()
+    .route("/", get(health))
         .route("/v1/health", get(health))
         .route("/v1/posts", get(get_posts))
         .route("/v1/posts/random", get(get_random_posts))
