@@ -8,6 +8,7 @@ mod services;
 use axum::{Router, routing::get};
 use controllers::health::health;
 use controllers::post::{get_posts, get_random_posts};
+use controllers::tag::get_tags;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
@@ -26,6 +27,7 @@ async fn main() {
         .route("/v1/health", get(health))
         .route("/v1/posts", get(get_posts))
         .route("/v1/posts/random", get(get_random_posts))
+        .route("/v1/tags", get(get_tags))
         .with_state(Arc::new(db_conn))
         .layer(CorsLayer::permissive());
 
