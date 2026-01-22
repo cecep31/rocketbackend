@@ -14,9 +14,11 @@ This is a Rust-based web backend application built with the Axum web framework. 
 The project follows a modular architecture with the following components:
 
 - **Main Application (`src/main.rs`)**: Initializes the Axum web server, establishes database connection, and mounts routes
+- **Configuration (`src/config.rs`)**: Handles application configuration from environment variables
 - **Database Layer (`src/database.rs`)**: Handles PostgreSQL database connection using tokio-postgres
-- **Models (`src/models/`)**: Defines data structures (Post, User, Response)
-- **Routes (`src/routes/`)**: Contains HTTP endpoint handlers
+- **Error Handling (`src/error.rs`)**: Defines custom error types and their HTTP response mapping
+- **Models (`src/models/`)**: Defines data structures (Post, User, Tag, Response)
+- **Routes (`src/handlers/`)**: Contains HTTP endpoint handlers
 - **Services (`src/services/`)**: Implements business logic for data operations
 
 ### Dependencies
@@ -98,7 +100,6 @@ API responses follow a consistent structure using `ApiResponse<T>`:
 axumbackend/
 ├── Cargo.toml          # Project manifest and dependencies
 ├── Cargo.lock          # Dependency lock file
-├── database.db         # SQLite database file (generated) - Note: Project actually uses PostgreSQL
 ├── Dockerfile          # Docker configuration for building and deploying
 ├── .dockerignore       # Files to ignore during Docker build
 ├── .gitignore          # Files to ignore by Git
@@ -107,19 +108,24 @@ axumbackend/
 ├── AGENTS.md           # Documentation for AI agents
 ├── src/
 │   ├── main.rs         # Application entry point
+│   ├── config.rs       # Configuration from environment variables
 │   ├── database.rs     # Database connection and setup
+│   ├── error.rs        # Custom error types and HTTP responses
 │   ├── models/
 │   │   ├── mod.rs      # Models module declaration
 │   │   ├── post.rs     # Post data model
 │   │   ├── user.rs     # User data model
+│   │   ├── tag.rs      # Tag data model
 │   │   └── response.rs # API response wrapper
-│   ├── routes/
-│   │   ├── mod.rs      # Routes module declaration
+│   ├── handlers/
+│   │   ├── mod.rs      # Handlers module declaration
 │   │   ├── health.rs   # Health check endpoint
-│   │   └── post.rs     # Posts endpoints
+│   │   ├── post.rs     # Posts endpoints
+│   │   └── tag.rs      # Tags endpoints
 │   └── services/
 │       ├── mod.rs      # Services module declaration
-│       └── post.rs     # Posts business logic
+│       ├── post.rs     # Posts business logic
+│       └── tag.rs      # Tags business logic
 └── target/             # Build artifacts (generated)
 ```
 

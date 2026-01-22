@@ -1,16 +1,11 @@
 mod config;
-mod controllers;
 mod database;
 mod error;
+mod handlers;
 mod models;
 mod services;
 
-use axum::{Router, routing::get};
-use controllers::health::health;
-use controllers::post::{get_posts, get_random_posts};
-use controllers::tag::get_tags;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
 
 #[tokio::main]
 async fn main() {
@@ -22,14 +17,7 @@ async fn main() {
         .await
         .expect("failed to connect to database");
 
-    let app = Router::new()
-    .route("/", get(health))
-        .route("/v1/health", get(health))
-        .route("/v1/posts", get(get_posts))
-        .route("/v1/posts/random", get(get_random_posts))
-        .route("/v1/tags", get(get_tags))
-        .with_state(Arc::new(db_conn))
-        .layer(CorsLayer::permissive());
+    let app = handlers::create_router().with_state(Arc::new(db_conn));
 
     let addr = format!("0.0.0.0:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();

@@ -1,12 +1,13 @@
 use crate::models::post::Post;
 use crate::models::response::ApiResponse;
 use crate::services;
-use std::sync::Arc;
 use axum::{
     extract::{Query, State},
-    Json,
+    routing::get,
+    Json, Router,
 };
 use serde::Deserialize;
+use std::sync::Arc;
 use tokio_postgres::Client;
 
 #[derive(Deserialize)]
@@ -28,4 +29,10 @@ pub async fn get_random_posts(
     let posts = services::post::get_random_posts(&conn, limit).await.unwrap_or_else(|_| vec![]);
     let total = posts.len() as i64;
     Json(ApiResponse::with_meta(posts, total, Some(limit), None))
+}
+
+pub fn routes() -> Router<Arc<Client>> {
+    Router::new()
+        .route("/v1/posts", get(get_posts))
+        .route("/v1/posts/random", get(get_random_posts))
 }
