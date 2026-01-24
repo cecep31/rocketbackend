@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use super::user::User;
+use super::tag::Tag;
 
 #[derive(Serialize, Deserialize)]
 pub struct Post {
@@ -18,4 +19,5 @@ pub struct Post {
     pub view_count: i64,
     pub like_count: i64,
     pub creator: User,
+    pub tags: Vec<Tag>,
 }

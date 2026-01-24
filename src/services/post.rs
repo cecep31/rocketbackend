@@ -1,4 +1,5 @@
 use crate::models::post::Post;
+use crate::models::tag::Tag;
 use crate::models::user::User;
 use chrono::{DateTime, Utc};
 use tokio_postgres::Client;
@@ -72,6 +73,7 @@ pub async fn get_all_posts(
                     id: user_id,
                     username,
                 },
+                tags: Vec::new(),
             })
         })
         .collect();
@@ -132,6 +134,7 @@ pub async fn get_random_posts(client: &Client, limit: i64) -> Result<Vec<Post>, 
                 id: user_id,
                 username,
             },
+            tags: Vec::new(),
         })
     }).collect();
 
@@ -170,6 +173,30 @@ pub async fn get_post_by_username_and_slug(
             let user_id: Uuid = row.get(12);
             let username: String = row.get(13);
 
+            // Fetch tags for this post
+            let tag_rows = client
+                .query(
+                    "SELECT t.id, t.name 
+                     FROM tags t 
+                     INNER JOIN posts_to_tags ptt ON t.id = ptt.tag_id 
+                     WHERE ptt.post_id = $1 
+                     ORDER BY t.name",
+                    &[&id],
+                )
+                .await?;
+
+            let tags: Vec<Tag> = tag_rows
+                .iter()
+                .map(|tag_row| {
+                    let tag_id: Uuid = tag_row.get(0);
+                    let tag_name: String = tag_row.get(1);
+                    Tag {
+                        id: tag_id,
+                        name: tag_name,
+                    }
+                })
+                .collect();
+
             Ok(Some(Post {
                 id,
                 title,
@@ -187,6 +214,7 @@ pub async fn get_post_by_username_and_slug(
                     id: user_id,
                     username,
                 },
+                tags,
             }))
         }
         None => Ok(None),
