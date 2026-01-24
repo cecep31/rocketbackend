@@ -30,9 +30,13 @@ async fn main() {
 
     let config = config::Config::from_env();
 
-    // Create connection pool instead of single connection
-    let pool = database::create_pool(&config.database_url);
-    tracing::info!("Database connection pool created");
+    // Create connection pool with configuration from environment
+    let pool = database::create_pool(&config.database_url, &config.db_pool);
+    tracing::info!(
+        "Database connection pool created (max_size: {}, timeout: {:?})",
+        config.db_pool.max_size,
+        config.db_pool.connection_timeout
+    );
 
     let app = handlers::create_router().with_state(pool);
 

@@ -189,6 +189,7 @@ dependencies = [
  "axum 0.8.8",
  "axum-extra",
  "chrono",
+ "deadpool",
  "deadpool-postgres",
  "dotenvy",
  "parking_lot",
