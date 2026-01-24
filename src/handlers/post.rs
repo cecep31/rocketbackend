@@ -15,10 +15,24 @@ pub struct RandomPostQuery {
     limit: Option<i64>,
 }
 
-pub async fn get_posts(State(conn): State<Arc<Client>>) -> Json<ApiResponse<Vec<Post>>> {
-    let posts = services::post::get_all_posts(&conn).await.unwrap_or_else(|_| vec![]);
-    let total = posts.len() as i64;
-    Json(ApiResponse::with_meta(posts, total, None, None))
+#[derive(Deserialize)]
+pub struct PaginationQuery {
+    offset: Option<i64>,
+    limit: Option<i64>,
+}
+
+pub async fn get_posts(
+    State(conn): State<Arc<Client>>,
+    query: Query<PaginationQuery>,
+) -> Json<ApiResponse<Vec<Post>>> {
+    let offset = query.offset.unwrap_or(0);
+    let limit = query.limit.unwrap_or(10);
+    
+    let (posts, total) = services::post::get_all_posts(&conn, offset, limit)
+        .await
+        .unwrap_or_else(|_| (vec![], 0));
+    
+    Json(ApiResponse::with_meta(posts, total, Some(limit), Some(offset)))
 }
 
 pub async fn get_random_posts(

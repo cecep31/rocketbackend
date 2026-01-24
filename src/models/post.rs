@@ -10,6 +10,7 @@ pub struct Post {
     pub body: String,
     pub created_by: Uuid,
     pub slug: String,
+    pub photo_url: Option<String>,
     pub created_at: DateTime<Utc>,
     pub creator: User,
 }
