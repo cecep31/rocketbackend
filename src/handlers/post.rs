@@ -2,7 +2,8 @@ use crate::models::post::Post;
 use crate::models::response::ApiResponse;
 use crate::services;
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
+    http::StatusCode,
     routing::get,
     Json, Router,
 };
@@ -45,8 +46,20 @@ pub async fn get_random_posts(
     Json(ApiResponse::with_meta(posts, total, Some(limit), None))
 }
 
+pub async fn get_post_by_username_and_slug(
+    State(conn): State<Arc<Client>>,
+    Path((username, slug)): Path<(String, String)>,
+) -> Result<Json<ApiResponse<Post>>, StatusCode> {
+    match services::post::get_post_by_username_and_slug(&conn, &username, &slug).await {
+        Ok(Some(post)) => Ok(Json(ApiResponse::success(post))),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
 pub fn routes() -> Router<Arc<Client>> {
     Router::new()
         .route("/v1/posts", get(get_posts))
         .route("/v1/posts/random", get(get_random_posts))
+        .route("/v1/posts/u/:username/:slug", get(get_post_by_username_and_slug))
 }
