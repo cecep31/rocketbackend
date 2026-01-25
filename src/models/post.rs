@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use tokio_postgres::Row;
 use uuid::Uuid;
 use super::user::User;
 use super::tag::Tag;
@@ -20,4 +21,39 @@ pub struct Post {
     pub like_count: i64,
     pub creator: User,
     pub tags: Vec<Tag>,
+}
+
+impl From<&Row> for Post {
+    fn from(row: &Row) -> Self {
+        // Substring body to 200 characters max
+        let body: Option<String> = row.get(2);
+        let body = body.map(|b| {
+            if b.chars().count() > 200 {
+                let truncated_body: String = b.chars().take(200).collect();
+                format!("{}...", truncated_body)
+            } else {
+                b
+            }
+        });
+
+        Self {
+            id: row.get(0),
+            title: row.get(1),
+            body,
+            created_by: row.get(3),
+            slug: row.get(4),
+            photo_url: row.get(5),
+            created_at: row.get(6),
+            updated_at: row.get(7),
+            deleted_at: row.get(8),
+            published: row.get(9),
+            view_count: row.get(10),
+            like_count: row.get(11),
+            creator: User {
+                id: row.get(12),
+                username: row.get(13),
+            },
+            tags: Vec::new(),
+        }
+    }
 }
