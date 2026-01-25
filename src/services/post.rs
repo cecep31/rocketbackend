@@ -1,9 +1,6 @@
 use crate::models::post::Post;
 use crate::models::tag::Tag;
-use crate::models::user::User;
-use chrono::{DateTime, Utc};
 use tokio_postgres::Client;
-use uuid::Uuid;
 
 pub async fn get_all_posts(
     client: &Client,
@@ -79,57 +76,12 @@ pub async fn get_all_posts(
         client.query(&query, &[&limit, &offset]).await?
     };
 
-    let posts: Result<Vec<Post>, _> = rows
+    let posts: Vec<Post> = rows
         .iter()
-        .map(|row| {
-            let id: Uuid = row.get(0);
-            let title: String = row.get(1);
-            let body: Option<String> = row.get(2);
-            let created_by: Uuid = row.get(3);
-            let slug: String = row.get(4);
-            let photo_url: Option<String> = row.get(5);
-            let created_at: DateTime<Utc> = row.get(6);
-            let updated_at: DateTime<Utc> = row.get(7);
-            let deleted_at: Option<DateTime<Utc>> = row.get(8);
-            let published: bool = row.get(9);
-            let view_count: i64 = row.get(10);
-            let like_count: i64 = row.get(11);
-            let user_id: Uuid = row.get(12);
-            let username: String = row.get(13);
-
-            // Substring body to 200 characters max
-            let body = body.map(|b| {
-                if b.chars().count() > 200 {
-                    let truncated_body: String = b.chars().take(200).collect();
-                    format!("{}...", truncated_body)
-                } else {
-                    b
-                }
-            });
-
-            Ok(Post {
-                id,
-                title,
-                body,
-                created_by,
-                slug,
-                photo_url,
-                created_at,
-                updated_at,
-                deleted_at,
-                published,
-                view_count,
-                like_count,
-                creator: User {
-                    id: user_id,
-                    username,
-                },
-                tags: Vec::new(),
-            })
-        })
+        .map(Post::from)
         .collect();
 
-    posts.map(|posts| (posts, total))
+    Ok((posts, total))
 }
 
 pub async fn get_random_posts(client: &Client, limit: i64) -> Result<Vec<Post>, tokio_postgres::Error> {
@@ -143,54 +95,9 @@ pub async fn get_random_posts(client: &Client, limit: i64) -> Result<Vec<Post>, 
         &[&limit]
     ).await?;
 
-    let posts: Result<Vec<Post>, _> = rows.iter().map(|row| {
-        let id: Uuid = row.get(0);
-        let title: String = row.get(1);
-        let body: Option<String> = row.get(2);
-        let created_by: Uuid = row.get(3);
-        let slug: String = row.get(4);
-        let photo_url: Option<String> = row.get(5);
-        let created_at: DateTime<Utc> = row.get(6);
-        let updated_at: DateTime<Utc> = row.get(7);
-        let deleted_at: Option<DateTime<Utc>> = row.get(8);
-        let published: bool = row.get(9);
-        let view_count: i64 = row.get(10);
-        let like_count: i64 = row.get(11);
-        let user_id: Uuid = row.get(12);
-        let username: String = row.get(13);
+    let posts: Vec<Post> = rows.iter().map(Post::from).collect();
 
-        // Substring body to 200 characters max
-        let body = body.map(|b| {
-            if b.chars().count() > 200 {
-                let truncated_body: String = b.chars().take(200).collect();
-                format!("{}...", truncated_body)
-            } else {
-                b
-            }
-        });
-
-        Ok(Post {
-            id,
-            title,
-            body,
-            created_by,
-            slug,
-            photo_url,
-            created_at,
-            updated_at,
-            deleted_at,
-            published,
-            view_count,
-            like_count,
-            creator: User {
-                id: user_id,
-                username,
-            },
-            tags: Vec::new(),
-        })
-    }).collect();
-
-    posts
+    Ok(posts)
 }
 
 pub async fn get_post_by_username_and_slug(
@@ -210,20 +117,7 @@ pub async fn get_post_by_username_and_slug(
 
     match row {
         Some(row) => {
-            let id: Uuid = row.get(0);
-            let title: String = row.get(1);
-            let body: Option<String> = row.get(2);
-            let created_by: Uuid = row.get(3);
-            let slug: String = row.get(4);
-            let photo_url: Option<String> = row.get(5);
-            let created_at: DateTime<Utc> = row.get(6);
-            let updated_at: DateTime<Utc> = row.get(7);
-            let deleted_at: Option<DateTime<Utc>> = row.get(8);
-            let published: bool = row.get(9);
-            let view_count: i64 = row.get(10);
-            let like_count: i64 = row.get(11);
-            let user_id: Uuid = row.get(12);
-            let username: String = row.get(13);
+            let mut post = Post::from(&row);
 
             // Fetch tags for this post
             let tag_rows = client
@@ -233,43 +127,14 @@ pub async fn get_post_by_username_and_slug(
                      INNER JOIN posts_to_tags ptt ON t.id = ptt.tag_id 
                      WHERE ptt.post_id = $1 
                      ORDER BY t.name",
-                    &[&id],
+                    &[&post.id],
                 )
                 .await?;
 
-            let tags: Vec<Tag> = tag_rows
-                .iter()
-                .map(|tag_row| {
-                    let tag_id: i32 = tag_row.get(0);
-                    let tag_name: String = tag_row.get(1);
-                    let tag_created_at: Option<DateTime<Utc>> = tag_row.get(2);
-                    Tag {
-                        id: tag_id,
-                        name: tag_name,
-                        created_at: tag_created_at,
-                    }
-                })
-                .collect();
+            let tags: Vec<Tag> = tag_rows.iter().map(Tag::from).collect();
+            post.tags = tags;
 
-            Ok(Some(Post {
-                id,
-                title,
-                body,
-                created_by,
-                slug,
-                photo_url,
-                created_at,
-                updated_at,
-                deleted_at,
-                published,
-                view_count,
-                like_count,
-                creator: User {
-                    id: user_id,
-                    username,
-                },
-                tags,
-            }))
+            Ok(Some(post))
         }
         None => Ok(None),
     }
@@ -366,34 +231,10 @@ pub async fn get_posts_by_tag(
         client.query(&query, &[&tag_name, &limit, &offset]).await?
     };
 
-    // Fetch posts and their tags
-    let mut posts = Vec::new();
-    for row in rows {
-        let id: Uuid = row.get(0);
-        let title: String = row.get(1);
-        let body: Option<String> = row.get(2);
-        let created_by: Uuid = row.get(3);
-        let slug: String = row.get(4);
-        let photo_url: Option<String> = row.get(5);
-        let created_at: DateTime<Utc> = row.get(6);
-        let updated_at: DateTime<Utc> = row.get(7);
-        let deleted_at: Option<DateTime<Utc>> = row.get(8);
-        let published: bool = row.get(9);
-        let view_count: i64 = row.get(10);
-        let like_count: i64 = row.get(11);
-        let user_id: Uuid = row.get(12);
-        let username: String = row.get(13);
+    // Fetch posts and then fetch their tags
+    let mut posts: Vec<Post> = rows.iter().map(Post::from).collect();
 
-        // Substring body to 200 characters max
-        let body = body.map(|b| {
-            if b.chars().count() > 200 {
-                let truncated_body: String = b.chars().take(200).collect();
-                format!("{}...", truncated_body)
-            } else {
-                b
-            }
-        });
-
+    for post in &mut posts {
         // Fetch tags for this post
         let tag_rows = client
             .query(
@@ -402,43 +243,12 @@ pub async fn get_posts_by_tag(
                  INNER JOIN posts_to_tags ptt ON t.id = ptt.tag_id 
                  WHERE ptt.post_id = $1 
                  ORDER BY t.name",
-                &[&id],
+                &[&post.id],
             )
             .await?;
 
-        let tags: Vec<Tag> = tag_rows
-            .iter()
-            .map(|tag_row| {
-                let tag_id: i32 = tag_row.get(0);
-                let tag_name: String = tag_row.get(1);
-                let tag_created_at: Option<DateTime<Utc>> = tag_row.get(2);
-                Tag {
-                    id: tag_id,
-                    name: tag_name,
-                    created_at: tag_created_at,
-                }
-            })
-            .collect();
-
-        posts.push(Post {
-            id,
-            title,
-            body,
-            created_by,
-            slug,
-            photo_url,
-            created_at,
-            updated_at,
-            deleted_at,
-            published,
-            view_count,
-            like_count,
-            creator: User {
-                id: user_id,
-                username,
-            },
-            tags,
-        });
+        let tags: Vec<Tag> = tag_rows.iter().map(Tag::from).collect();
+        post.tags = tags;
     }
 
     Ok((posts, total))

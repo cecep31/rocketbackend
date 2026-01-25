@@ -32,16 +32,29 @@ pub struct PaginationQuery {
     order_direction: Option<OrderDirection>,
 }
 
-pub async fn get_posts(
-    State(pool): State<DbPool>,
-    query: Query<PaginationQuery>,
-) -> Result<Json<ApiResponse<Vec<Post>>>, AppError> {
-    let client = pool.get().await?;
+fn get_pagination_params(
+    query: &Query<PaginationQuery>,
+) -> (
+    i64,
+    i64,
+    Option<&str>,
+    Option<&str>,
+    Option<&OrderDirection>,
+) {
     let offset = query.offset.unwrap_or(0);
     let limit = query.limit.unwrap_or(10);
     let search = query.search.as_deref();
     let order_by = query.order_by.as_deref();
     let order_direction = query.order_direction.as_ref();
+    (offset, limit, search, order_by, order_direction)
+}
+
+pub async fn get_posts(
+    State(pool): State<DbPool>,
+    query: Query<PaginationQuery>,
+) -> Result<Json<ApiResponse<Vec<Post>>>, AppError> {
+    let client = pool.get().await?;
+    let (offset, limit, search, order_by, order_direction) = get_pagination_params(&query);
 
     let (posts, total) = services::post::get_all_posts(
         &client,
@@ -51,8 +64,7 @@ pub async fn get_posts(
         order_by,
         order_direction,
     )
-    .await
-    .unwrap_or_else(|_| (vec![], 0));
+    .await?;
 
     Ok(Json(ApiResponse::with_meta(posts, total, limit, offset)))
 }
@@ -63,9 +75,7 @@ pub async fn get_random_posts(
 ) -> Result<Json<ApiResponse<Vec<Post>>>, AppError> {
     let client = pool.get().await?;
     let limit = query.limit.unwrap_or(6);
-    let posts = services::post::get_random_posts(&client, limit)
-        .await
-        .unwrap_or_else(|_| vec![]);
+    let posts = services::post::get_random_posts(&client, limit).await?;
     let total = posts.len() as i64;
     Ok(Json(ApiResponse::with_meta(posts, total, limit, 0)))
 }
@@ -76,11 +86,7 @@ pub async fn get_posts_by_tag(
     query: Query<PaginationQuery>,
 ) -> Result<Json<ApiResponse<Vec<Post>>>, AppError> {
     let client = pool.get().await?;
-    let offset = query.offset.unwrap_or(0);
-    let limit = query.limit.unwrap_or(10);
-    let search = query.search.as_deref();
-    let order_by = query.order_by.as_deref();
-    let order_direction = query.order_direction.as_ref();
+    let (offset, limit, search, order_by, order_direction) = get_pagination_params(&query);
 
     let (posts, total) = services::post::get_posts_by_tag(
         &client,
@@ -91,8 +97,7 @@ pub async fn get_posts_by_tag(
         order_by,
         order_direction,
     )
-    .await
-    .unwrap_or_else(|_| (vec![], 0));
+    .await?;
 
     Ok(Json(ApiResponse::with_meta(posts, total, limit, offset)))
 }
