@@ -228,7 +228,7 @@ pub async fn get_post_by_username_and_slug(
             // Fetch tags for this post
             let tag_rows = client
                 .query(
-                    "SELECT t.id, t.name 
+                    "SELECT t.id, t.name, t.created_at 
                      FROM tags t 
                      INNER JOIN posts_to_tags ptt ON t.id = ptt.tag_id 
                      WHERE ptt.post_id = $1 
@@ -240,11 +240,13 @@ pub async fn get_post_by_username_and_slug(
             let tags: Vec<Tag> = tag_rows
                 .iter()
                 .map(|tag_row| {
-                    let tag_id: Uuid = tag_row.get(0);
+                    let tag_id: i32 = tag_row.get(0);
                     let tag_name: String = tag_row.get(1);
+                    let tag_created_at: Option<DateTime<Utc>> = tag_row.get(2);
                     Tag {
                         id: tag_id,
                         name: tag_name,
+                        created_at: tag_created_at,
                     }
                 })
                 .collect();
@@ -395,7 +397,7 @@ pub async fn get_posts_by_tag(
         // Fetch tags for this post
         let tag_rows = client
             .query(
-                "SELECT t.id, t.name 
+                "SELECT t.id, t.name, t.created_at 
                  FROM tags t 
                  INNER JOIN posts_to_tags ptt ON t.id = ptt.tag_id 
                  WHERE ptt.post_id = $1 
@@ -407,11 +409,13 @@ pub async fn get_posts_by_tag(
         let tags: Vec<Tag> = tag_rows
             .iter()
             .map(|tag_row| {
-                let tag_id: Uuid = tag_row.get(0);
+                let tag_id: i32 = tag_row.get(0);
                 let tag_name: String = tag_row.get(1);
+                let tag_created_at: Option<DateTime<Utc>> = tag_row.get(2);
                 Tag {
                     id: tag_id,
                     name: tag_name,
+                    created_at: tag_created_at,
                 }
             })
             .collect();

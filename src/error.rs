@@ -19,10 +19,20 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
-            AppError::Database(e) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Database error: {}", e),
-            ),
+            AppError::Database(e) => {
+                // Log the full error for debugging
+                tracing::error!("Database error: {:?}", e);
+                // Include more details in the response for debugging
+                let error_msg = if e.to_string().is_empty() {
+                    format!("Database error: {:?}", e)
+                } else {
+                    format!("Database error: {}", e)
+                };
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    error_msg,
+                )
+            },
             AppError::Pool(e) => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 format!("Connection pool error: {}", e),
