@@ -32,7 +32,8 @@ async fn main() {
     let config = config::Config::from_env();
 
     // Create connection pool with configuration from environment
-    let pool = database::create_pool(&config.database_url, &config.db_pool);
+    let pool = database::create_pool(&config.database_url, &config.db_pool)
+        .expect("Failed to create database pool - check DATABASE_URL format");
     tracing::info!(
         "Database connection pool created (max_size: {}, timeout: {:?})",
         config.db_pool.max_size,
