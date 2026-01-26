@@ -117,7 +117,7 @@ pub async fn get_post_by_username_and_slug(
 
     match row {
         Some(row) => {
-            let mut post = Post::from(&row);
+            let mut post = Post::from_full(&row);
 
             // Fetch tags for this post
             let tag_rows = client

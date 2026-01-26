@@ -66,6 +66,8 @@ The application connects to a PostgreSQL database specified by the DATABASE_URL 
 - `GET /` and `GET /v1/health`: Health check endpoints returning status information
 - `GET /v1/posts`: Retrieves all blog posts from the database
 - `GET /v1/posts/random?limit=N`: Retrieves random blog posts with an optional limit parameter
+- `GET /v1/posts/tag/{tag}`: Retrieves blog posts filtered by a specific tag
+- `GET /v1/posts/u/{username}/{slug}`: Retrieves a specific blog post by username and slug
 
 ## Development Conventions
 
@@ -73,27 +75,39 @@ The application connects to a PostgreSQL database specified by the DATABASE_URL 
 - Modules are organized by concern (models, routes, services, database)
 - Each module has its own file or directory
 - Route handlers delegate business logic to service functions
-- Database connections are managed through Axum's state system using Arc-wrapped Client
+- Database connections are managed through Axum's state system using a connection pool
 
 ### Data Model
 The `Post` model includes:
 - `id`: UUID primary key
 - `title`: String representing the post title
-- `body`: String containing the post content
+- `body`: String containing the post content (truncated to 200 chars in some queries)
 - `created_by`: UUID referencing the user who created the post
 - `slug`: URL-friendly identifier for the post
+- `photo_url`: Optional URL for a post image
 - `created_at`: DateTime in UTC format
+- `updated_at`: DateTime in UTC format
+- `deleted_at`: Optional DateTime for soft deletion
+- `published`: Boolean indicating if the post is published
+- `view_count`: Number of views
+- `like_count`: Number of likes
 - `creator`: Associated User object
+- `tags`: List of associated Tag objects
 
 The `User` model includes:
 - `id`: UUID primary key
 - `username`: String representing the user's name
 
+The `Tag` model includes:
+- `id`: UUID primary key
+- `name`: String representing the tag name
+- `created_at`: DateTime in UTC format
+
 ### Response Format
 API responses follow a consistent structure using `ApiResponse<T>`:
 - `success`: Boolean indicating if the request was successful
 - `data`: Optional field containing the response data
-- `meta`: Metadata including total count, limit, and offset for pagination
+- `meta`: Metadata including total count, limit, offset, and total pages for pagination
 
 ## File Structure
 ```
@@ -106,17 +120,18 @@ axumbackend/
 ├── GEMINI.md           # Gemini-specific documentation
 ├── QWEN.md             # Qwen-specific documentation
 ├── AGENTS.md           # Documentation for AI agents
+├── .env.example        # Example environment variables
 ├── src/
 │   ├── main.rs         # Application entry point
 │   ├── config.rs       # Configuration from environment variables
 │   ├── database.rs     # Database connection and setup
 │   ├── error.rs        # Custom error types and HTTP responses
+│   ├── response.rs     # API response wrapper
 │   ├── models/
 │   │   ├── mod.rs      # Models module declaration
 │   │   ├── post.rs     # Post data model
 │   │   ├── user.rs     # User data model
-│   │   ├── tag.rs      # Tag data model
-│   │   └── response.rs # API response wrapper
+│   │   └── tag.rs      # Tag data model
 │   ├── handlers/
 │   │   ├── mod.rs      # Handlers module declaration
 │   │   ├── health.rs   # Health check endpoint

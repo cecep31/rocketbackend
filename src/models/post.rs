@@ -57,3 +57,30 @@ impl From<&Row> for Post {
         }
     }
 }
+
+impl Post {
+    /// Create a Post from a Row without truncating the body
+    pub fn from_full(row: &Row) -> Self {
+        let body: Option<String> = row.get(2);
+
+        Self {
+            id: row.get(0),
+            title: row.get(1),
+            body,
+            created_by: row.get(3),
+            slug: row.get(4),
+            photo_url: row.get(5),
+            created_at: row.get(6),
+            updated_at: row.get(7),
+            deleted_at: row.get(8),
+            published: row.get(9),
+            view_count: row.get(10),
+            like_count: row.get(11),
+            creator: User {
+                id: row.get(12),
+                username: row.get(13),
+            },
+            tags: Vec::new(),
+        }
+    }
+}
