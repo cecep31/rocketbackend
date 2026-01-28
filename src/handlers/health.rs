@@ -18,5 +18,5 @@ pub async fn health() -> Json<HealthResponse> {
 pub fn routes() -> Router<DbPool> {
     Router::new()
         .route("/", get(health))
-        .route("/v1/health", get(health))
+        .route("/health", get(health))
 }
