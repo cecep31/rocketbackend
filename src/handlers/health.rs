@@ -11,7 +11,7 @@ pub struct HealthResponse {
 pub async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         success: true,
-        message: String::from("helloword"),
+        message: String::from("hello world"),
     })
 }
 

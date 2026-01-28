@@ -47,19 +47,18 @@ async fn fetch_tags_for_posts(
     Ok(())
 }
 
-/// Validate order_by field against whitelist
-fn validate_order_field(order_by: Option<&str>) -> &str {
-    const VALID_FIELDS: [&str; 6] = [
-        "id",
-        "title",
-        "created_at",
-        "updated_at",
-        "view_count",
-        "like_count",
-    ];
-    order_by
-        .filter(|f| VALID_FIELDS.contains(f))
-        .unwrap_or("created_at")
+/// Validate order_by field against whitelist using match statement
+/// Returns the validated field name or default "created_at"
+fn validate_order_field(order_by: Option<&str>) -> &'static str {
+    match order_by {
+        Some("id") => "id",
+        Some("title") => "title",
+        Some("created_at") => "created_at",
+        Some("updated_at") => "updated_at",
+        Some("view_count") => "view_count",
+        Some("like_count") => "like_count",
+        _ => "created_at",
+    }
 }
 
 /// Get order direction string

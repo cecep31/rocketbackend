@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 chrono = { version = "0.4.43", features = ["serde"] }
 dotenvy = "0.15"
-parking_lot = { version = "0.12.5", features = ["serde"] }
 axum = "0.8.8"
 axum-extra = { version = "0.9.6", features = ["typed-routing"] }
 tower-http = { version = "0.5.2", features = ["cors", "trace"] }
