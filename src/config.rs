@@ -6,7 +6,7 @@ use std::time::Duration;
 // ============================================================================
 
 /// Default server port
-const DEFAULT_PORT: u16 = 8000;
+const DEFAULT_PORT: u16 = 8080;
 
 /// Default database connection string
 const DEFAULT_DATABASE_URL: &str =
