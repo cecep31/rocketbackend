@@ -86,15 +86,18 @@ pub async fn get_all_posts(
     let total: i64 = if let Some(ref search_val) = search_param {
         client
             .query_one(
-                "SELECT COUNT(*) FROM posts p INNER JOIN users u ON p.created_by = u.id 
-                 WHERE p.published = true AND (p.title ILIKE $1 OR p.body ILIKE $1 OR u.username ILIKE $1)",
+                "SELECT COUNT(*) FROM posts p INNER JOIN users u ON p.created_by = u.id
+                 WHERE p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $1 OR p.body ILIKE $1 OR u.username ILIKE $1)",
                 &[search_val],
             )
             .await?
             .get(0)
     } else {
         client
-            .query_one("SELECT COUNT(*) FROM posts WHERE published = true", &[])
+            .query_one(
+                "SELECT COUNT(*) FROM posts WHERE published = true AND deleted_at IS NULL",
+                &[],
+            )
             .await?
             .get(0)
     };
@@ -104,7 +107,7 @@ pub async fn get_all_posts(
         format!(
             "SELECT p.id, p.title, p.body, p.created_by, p.slug, p.photo_url, p.created_at, p.updated_at, p.deleted_at, p.published, p.view_count, p.like_count, p.bookmark_count, u.id, u.username, u.image
              FROM posts p INNER JOIN users u ON p.created_by = u.id
-             WHERE p.published = true AND (p.title ILIKE $1 OR p.body ILIKE $1 OR u.username ILIKE $1)
+             WHERE p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $1 OR p.body ILIKE $1 OR u.username ILIKE $1)
              ORDER BY p.{} {} LIMIT $2 OFFSET $3",
             order_field, order_dir
         )
@@ -112,7 +115,7 @@ pub async fn get_all_posts(
         format!(
             "SELECT p.id, p.title, p.body, p.created_by, p.slug, p.photo_url, p.created_at, p.updated_at, p.deleted_at, p.published, p.view_count, p.like_count, p.bookmark_count, u.id, u.username, u.image
              FROM posts p INNER JOIN users u ON p.created_by = u.id
-             WHERE p.published = true ORDER BY p.{} {} LIMIT $1 OFFSET $2",
+             WHERE p.published = true AND p.deleted_at IS NULL ORDER BY p.{} {} LIMIT $1 OFFSET $2",
             order_field, order_dir
         )
     };
@@ -145,7 +148,7 @@ pub async fn get_random_posts(
                  SELECT * FROM posts TABLESAMPLE BERNOULLI(5)
              ) p
              INNER JOIN users u ON p.created_by = u.id
-             WHERE p.published = true
+             WHERE p.published = true AND p.deleted_at IS NULL
              ORDER BY RANDOM()
              LIMIT $1",
             &[&limit],
@@ -168,7 +171,7 @@ pub async fn get_post_by_username_and_slug(
             "SELECT p.id, p.title, p.body, p.created_by, p.slug, p.photo_url, p.created_at, p.updated_at, p.deleted_at, p.published, p.view_count, p.like_count, p.bookmark_count, u.id, u.username, u.image
              FROM posts p
              INNER JOIN users u ON p.created_by = u.id
-             WHERE u.username = $1 AND p.slug = $2 AND p.published = true",
+             WHERE u.username = $1 AND p.slug = $2 AND p.published = true AND p.deleted_at IS NULL",
             &[&username, &slug],
         )
         .await?;
@@ -219,7 +222,7 @@ pub async fn get_posts_by_tag(
                  INNER JOIN users u ON p.created_by = u.id
                  INNER JOIN posts_to_tags ptt ON p.id = ptt.post_id
                  INNER JOIN tags t ON ptt.tag_id = t.id
-                 WHERE t.name = $1 AND p.published = true AND (p.title ILIKE $2 OR p.body ILIKE $2 OR u.username ILIKE $2)",
+                 WHERE t.name = $1 AND p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $2 OR p.body ILIKE $2 OR u.username ILIKE $2)",
                 &[&tag_name, search_val],
             )
             .await?
@@ -230,7 +233,7 @@ pub async fn get_posts_by_tag(
                 "SELECT COUNT(DISTINCT p.id) FROM posts p
                  INNER JOIN posts_to_tags ptt ON p.id = ptt.post_id
                  INNER JOIN tags t ON ptt.tag_id = t.id
-                 WHERE t.name = $1 AND p.published = true",
+                 WHERE t.name = $1 AND p.published = true AND p.deleted_at IS NULL",
                 &[&tag_name],
             )
             .await?
@@ -244,7 +247,7 @@ pub async fn get_posts_by_tag(
              FROM posts p INNER JOIN users u ON p.created_by = u.id
              INNER JOIN posts_to_tags ptt ON p.id = ptt.post_id
              INNER JOIN tags t ON ptt.tag_id = t.id
-             WHERE t.name = $1 AND p.published = true AND (p.title ILIKE $2 OR p.body ILIKE $2 OR u.username ILIKE $2)
+             WHERE t.name = $1 AND p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $2 OR p.body ILIKE $2 OR u.username ILIKE $2)
              ORDER BY p.{} {} LIMIT $3 OFFSET $4",
             order_field, order_dir
         )
@@ -254,7 +257,7 @@ pub async fn get_posts_by_tag(
              FROM posts p INNER JOIN users u ON p.created_by = u.id
              INNER JOIN posts_to_tags ptt ON p.id = ptt.post_id
              INNER JOIN tags t ON ptt.tag_id = t.id
-             WHERE t.name = $1 AND p.published = true ORDER BY p.{} {} LIMIT $2 OFFSET $3",
+             WHERE t.name = $1 AND p.published = true AND p.deleted_at IS NULL ORDER BY p.{} {} LIMIT $2 OFFSET $3",
             order_field, order_dir
         )
     };
