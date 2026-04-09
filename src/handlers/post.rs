@@ -127,7 +127,9 @@ pub async fn get_post_by_username_and_slug(
     Valid(Path(params)): Valid<Path<PostPath>>,
 ) -> Result<Json<ApiResponse<Post>>, AppError> {
     let client = pool.get().await?;
-    match services::post::get_post_by_username_and_slug(&client, &params.username, &params.slug).await {
+    match services::post::get_post_by_username_and_slug(&client, &params.username, &params.slug)
+        .await
+    {
         Ok(Some(post)) => Ok(Json(ApiResponse::success(post))),
         Ok(None) => Err(AppError::NotFound(format!(
             "Post not found: {} by {}",

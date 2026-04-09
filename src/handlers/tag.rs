@@ -28,7 +28,7 @@ pub async fn get_tags(
     let client = pool.get().await?;
     let offset = query.offset.unwrap_or(0);
     let limit = query.limit.unwrap_or(50);
-    
+
     let (tags, total) = services::tag::get_all_tags(&client, offset, limit).await?;
     Ok(Json(ApiResponse::with_meta(tags, total, limit, offset)))
 }

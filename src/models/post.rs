@@ -19,6 +19,7 @@ pub struct Post {
     pub published: bool,
     pub view_count: i64,
     pub like_count: i64,
+    pub bookmark_count: i64,
     pub user: User,
     pub tags: Vec<Tag>,
 }
@@ -49,9 +50,10 @@ impl From<&Row> for Post {
             published: row.get(9),
             view_count: row.get(10),
             like_count: row.get(11),
+            bookmark_count: row.get(12),
             user: User {
-                id: row.get(12),
-                username: row.get(13),
+                id: row.get(13),
+                username: row.get(14),
             },
             tags: Vec::new(),
         }
@@ -76,9 +78,10 @@ impl Post {
             published: row.get(9),
             view_count: row.get(10),
             like_count: row.get(11),
+            bookmark_count: row.get(12),
             user: User {
-                id: row.get(12),
-                username: row.get(13),
+                id: row.get(13),
+                username: row.get(14),
             },
             tags: Vec::new(),
         }
