@@ -1,6 +1,6 @@
 use crate::database::DbPool;
 use crate::error::AppError;
-use crate::models::post::Post;
+use crate::models::post::{OrderDirection, Post};
 use crate::response::ApiResponse;
 use crate::services;
 use axum::{
@@ -18,13 +18,6 @@ use validator::Validate;
 pub struct RandomPostQuery {
     #[validate(range(min = 1, max = 100))]
     limit: Option<i64>,
-}
-
-#[derive(Deserialize, Clone, Copy)]
-#[serde(rename_all = "camelCase")]
-pub enum OrderDirection {
-    Asc,
-    Desc,
 }
 
 #[derive(Deserialize, Validate)]

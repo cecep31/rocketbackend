@@ -21,7 +21,7 @@ cp .env.example .env
 Edit `.env` with your database credentials:
 
 ```env
-PORT=8000
+PORT=8080
 DATABASE_URL="postgresql://postgres:password@localhost:5432/axumbackend"
 DB_POOL_MAX_SIZE=20
 ```
@@ -32,7 +32,7 @@ DB_POOL_MAX_SIZE=20
 cargo run
 ```
 
-Server starts on `http://localhost:8000`
+Server starts on `http://localhost:8080`
 
 ## API Endpoints
 
@@ -67,7 +67,7 @@ cargo clippy
 
 ```bash
 docker build -t axumbackend .
-docker run -p 8000:8000 --env-file .env axumbackend
+docker run -p 8080:8080 --env-file .env axumbackend
 ```
 
 ## Project Structure

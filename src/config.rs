@@ -42,8 +42,6 @@ impl Config {
     /// - `DATABASE_URL`: PostgreSQL connection string
     /// - `DB_POOL_MAX_SIZE`: Maximum pool size (default: 20)
     /// - `DB_POOL_CONNECTION_TIMEOUT`: Connection timeout in seconds (default: 30)
-    /// - `DB_POOL_MAX_LIFETIME`: Max connection lifetime in seconds, 0 = no limit (default: 1800)
-    /// - `DB_POOL_IDLE_TIMEOUT`: Idle timeout in seconds, 0 = no limit (default: 600)
     ///
     /// # Panics
     /// Panics if numeric values cannot be parsed.

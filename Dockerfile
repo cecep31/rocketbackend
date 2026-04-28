@@ -44,7 +44,7 @@ RUN strip /usr/local/bin/axumbackend
 USER app
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8080
 
 # Run the application
 CMD ["axumbackend"]

@@ -1,4 +1,4 @@
-use crate::models::post::Post;
+use crate::models::post::{OrderDirection, Post};
 use crate::models::tag::Tag;
 use std::collections::HashMap;
 use tokio_postgres::Client;
@@ -63,9 +63,9 @@ fn validate_order_field(order_by: Option<&str>) -> &'static str {
 }
 
 /// Get order direction string
-fn get_order_dir(dir: Option<&crate::handlers::OrderDirection>) -> &'static str {
+fn get_order_dir(dir: Option<&OrderDirection>) -> &'static str {
     match dir {
-        Some(crate::handlers::OrderDirection::Asc) => "ASC",
+        Some(OrderDirection::Asc) => "ASC",
         _ => "DESC", // Default to DESC
     }
 }
@@ -76,7 +76,7 @@ pub async fn get_all_posts(
     limit: i64,
     search: Option<&str>,
     order_by: Option<&str>,
-    order_direction: Option<&crate::handlers::OrderDirection>,
+    order_direction: Option<&OrderDirection>,
 ) -> Result<(Vec<Post>, i64), tokio_postgres::Error> {
     let order_field = validate_order_field(order_by);
     let order_dir = get_order_dir(order_direction);
@@ -87,7 +87,7 @@ pub async fn get_all_posts(
         client
             .query_one(
                 "SELECT COUNT(*) FROM posts p INNER JOIN users u ON p.created_by = u.id
-                 WHERE p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $1 OR p.body ILIKE $1 OR u.username ILIKE $1)",
+                 WHERE p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $1 ESCAPE '\\' OR p.body ILIKE $1 ESCAPE '\\' OR u.username ILIKE $1 ESCAPE '\\')",
                 &[search_val],
             )
             .await?
@@ -107,7 +107,7 @@ pub async fn get_all_posts(
         format!(
             "SELECT p.id, p.title, p.body, p.created_by, p.slug, p.photo_url, p.created_at, p.updated_at, p.deleted_at, p.published, p.view_count, p.like_count, p.bookmark_count, u.id, u.username, u.image
              FROM posts p INNER JOIN users u ON p.created_by = u.id
-             WHERE p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $1 OR p.body ILIKE $1 OR u.username ILIKE $1)
+             WHERE p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $1 ESCAPE '\\' OR p.body ILIKE $1 ESCAPE '\\' OR u.username ILIKE $1 ESCAPE '\\')
              ORDER BY p.{} {} LIMIT $2 OFFSET $3",
             order_field, order_dir
         )
@@ -136,17 +136,12 @@ pub async fn get_random_posts(
     client: &Client,
     limit: i64,
 ) -> Result<Vec<Post>, tokio_postgres::Error> {
-    // Use TABLESAMPLE BERNOULLI for efficient random sampling.
-    // This scans only ~5% of the table instead of sorting all rows,
-    // then ORDER BY RANDOM() is applied only to the sampled rows (much faster).
     let rows = client
         .query(
             "SELECT p.id, p.title, p.body, p.created_by, p.slug, p.photo_url,
                     p.created_at, p.updated_at, p.deleted_at, p.published,
                     p.view_count, p.like_count, p.bookmark_count, u.id, u.username, u.image
-             FROM (
-                 SELECT * FROM posts TABLESAMPLE BERNOULLI(5)
-             ) p
+             FROM posts p
              INNER JOIN users u ON p.created_by = u.id
              WHERE p.published = true AND p.deleted_at IS NULL
              ORDER BY RANDOM()
@@ -208,7 +203,7 @@ pub async fn get_posts_by_tag(
     limit: i64,
     search: Option<&str>,
     order_by: Option<&str>,
-    order_direction: Option<&crate::handlers::OrderDirection>,
+    order_direction: Option<&OrderDirection>,
 ) -> Result<(Vec<Post>, i64), tokio_postgres::Error> {
     let order_field = validate_order_field(order_by);
     let order_dir = get_order_dir(order_direction);
@@ -222,7 +217,7 @@ pub async fn get_posts_by_tag(
                  INNER JOIN users u ON p.created_by = u.id
                  INNER JOIN posts_to_tags ptt ON p.id = ptt.post_id
                  INNER JOIN tags t ON ptt.tag_id = t.id
-                 WHERE t.name = $1 AND p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $2 OR p.body ILIKE $2 OR u.username ILIKE $2)",
+                 WHERE t.name = $1 AND p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $2 ESCAPE '\\' OR p.body ILIKE $2 ESCAPE '\\' OR u.username ILIKE $2 ESCAPE '\\')",
                 &[&tag_name, search_val],
             )
             .await?
@@ -247,7 +242,7 @@ pub async fn get_posts_by_tag(
              FROM posts p INNER JOIN users u ON p.created_by = u.id
              INNER JOIN posts_to_tags ptt ON p.id = ptt.post_id
              INNER JOIN tags t ON ptt.tag_id = t.id
-             WHERE t.name = $1 AND p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $2 OR p.body ILIKE $2 OR u.username ILIKE $2)
+             WHERE t.name = $1 AND p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $2 ESCAPE '\\' OR p.body ILIKE $2 ESCAPE '\\' OR u.username ILIKE $2 ESCAPE '\\')
              ORDER BY p.{} {} LIMIT $3 OFFSET $4",
             order_field, order_dir
         )

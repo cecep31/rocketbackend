@@ -1,9 +1,17 @@
 use super::tag::Tag;
 use super::user::User;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use tokio_postgres::Row;
 use uuid::Uuid;
+
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub enum OrderDirection {
+    Asc,
+    Desc,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct Post {
