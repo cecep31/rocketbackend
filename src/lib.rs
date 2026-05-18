@@ -5,5 +5,6 @@ pub mod entities;
 pub mod error;
 pub mod handlers;
 pub mod models;
+pub mod rate_limit;
 pub mod response;
 pub mod services;

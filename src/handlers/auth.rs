@@ -1,16 +1,19 @@
 use crate::auth::AuthUser;
 use crate::database::DbPool;
 use crate::error::AppError;
+use crate::rate_limit::{RateLimiter, rate_limit};
 use crate::response::ApiResponse;
 use crate::services::{self, auth::AuthError};
 use axum::{
     Json, Router,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
+    middleware,
     routing::{get, post},
 };
 use axum_valid::Valid;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use validator::Validate;
 
 #[derive(Deserialize, Validate)]
@@ -201,12 +204,40 @@ pub async fn profile(
 }
 
 pub fn routes() -> Router<DbPool> {
+    let login_limiter = RateLimiter::new(5, Duration::from_secs(60));
+    let register_limiter = RateLimiter::new(3, Duration::from_secs(60));
+    let refresh_limiter = RateLimiter::new(20, Duration::from_secs(60));
+    let availability_limiter = RateLimiter::new(30, Duration::from_secs(60));
+
     Router::new()
-        .route("/api/auth/register", post(register))
-        .route("/api/auth/login", post(login))
-        .route("/api/auth/check-username", post(check_username))
-        .route("/api/auth/email/{email}", get(check_email))
-        .route("/api/auth/refresh", post(refresh_token))
+        .route(
+            "/api/auth/register",
+            post(register)
+                .route_layer(middleware::from_fn_with_state(register_limiter, rate_limit)),
+        )
+        .route(
+            "/api/auth/login",
+            post(login).route_layer(middleware::from_fn_with_state(login_limiter, rate_limit)),
+        )
+        .route(
+            "/api/auth/check-username",
+            post(check_username).route_layer(middleware::from_fn_with_state(
+                availability_limiter.clone(),
+                rate_limit,
+            )),
+        )
+        .route(
+            "/api/auth/email/{email}",
+            get(check_email).route_layer(middleware::from_fn_with_state(
+                availability_limiter,
+                rate_limit,
+            )),
+        )
+        .route(
+            "/api/auth/refresh",
+            post(refresh_token)
+                .route_layer(middleware::from_fn_with_state(refresh_limiter, rate_limit)),
+        )
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/profile", get(profile))
 }
