@@ -378,7 +378,7 @@ pub async fn post_report(
         .collect();
     let tag_rows = TagRow::find_by_statement(Statement::from_string(
         DbBackend::Postgres,
-        "SELECT tags.id, tags.name, COUNT(posts_to_tags.post_id)::bigint AS post_count, COALESCE(SUM(posts.view_count), 0)::bigint AS total_views, COALESCE(SUM(posts.like_count), 0)::bigint AS total_likes FROM tags INNER JOIN posts_to_tags ON tags.id = posts_to_tags.tag_id INNER JOIN posts ON posts_to_tags.post_id = posts.id WHERE posts.published = true GROUP BY tags.id, tags.name ORDER BY COUNT(posts_to_tags.post_id) DESC LIMIT 10".to_string(),
+        "SELECT tags.id, tags.name, COUNT(ptt.post_id)::bigint AS post_count, COALESCE(SUM(p.view_count), 0)::bigint AS total_views, COALESCE(SUM(p.like_count), 0)::bigint AS total_likes FROM tags INNER JOIN posts_to_tags ptt ON tags.id = ptt.tag_id INNER JOIN posts p ON ptt.post_id = p.id WHERE p.published = true GROUP BY tags.id, tags.name ORDER BY COUNT(ptt.post_id) DESC LIMIT 10".to_string(),
     ))
     .all(db)
     .await?;

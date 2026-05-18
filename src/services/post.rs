@@ -2,7 +2,7 @@ use crate::entities::{posts, posts_to_tags, tags, users};
 use crate::models::post::{Post, SitemapPost};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, FromQueryResult, IntoActiveModel,
     ModelTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
 };
 
@@ -26,13 +26,12 @@ fn get_order_dir(dir: Option<&crate::handlers::OrderDirection>) -> Order {
 }
 
 async fn hydrate_post(
-    db: &DatabaseConnection,
-    post: posts::Model,
+    post: &posts::Model,
+    user: Option<users::Model>,
+    tags: Vec<tags::Model>,
     truncate_body: bool,
 ) -> Result<Post, DbErr> {
-    let user = post.find_related(users::Entity).one(db).await?;
-    let post_tags = post.clone().find_related(tags::Entity).all(db).await?;
-    Ok(Post::from_entity(post, user, post_tags, truncate_body))
+    Ok(Post::from_entity(post.clone(), user, tags, truncate_body))
 }
 
 async fn hydrate_posts(
@@ -40,10 +39,58 @@ async fn hydrate_posts(
     posts: Vec<posts::Model>,
     truncate_body: bool,
 ) -> Result<Vec<Post>, DbErr> {
-    let mut hydrated = Vec::with_capacity(posts.len());
-    for post in posts {
-        hydrated.push(hydrate_post(db, post, truncate_body).await?);
+    if posts.is_empty() {
+        return Ok(Vec::new());
     }
+
+    let post_ids: Vec<uuid::Uuid> = posts.iter().map(|p| p.id).collect();
+
+    let users_map: std::collections::HashMap<uuid::Uuid, users::Model> = users::Entity::find()
+        .filter(users::Column::Id.is_in(posts.iter().map(|p| p.created_by)))
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|u| (u.id, u))
+        .collect();
+
+    let tags_map: std::collections::HashMap<uuid::Uuid, Vec<tags::Model>> = {
+        #[derive(sea_orm::FromQueryResult)]
+        struct PostTagRow {
+            post_id: uuid::Uuid,
+            tag_id: i32,
+            tag_name: String,
+        }
+
+        let params = sea_orm::sea_query::Value::from(post_ids.clone());
+        let rows: Vec<PostTagRow> = PostTagRow::find_by_statement(
+            sea_orm::Statement::from_sql_and_values(
+                sea_orm::DbBackend::Postgres,
+                "SELECT ptt.post_id, t.id AS tag_id, t.name AS tag_name FROM posts_to_tags ptt INNER JOIN tags t ON ptt.tag_id = t.id WHERE ptt.post_id = ANY($1)",
+                vec![params],
+            ),
+        )
+        .all(db)
+        .await?;
+
+        let mut map: std::collections::HashMap<uuid::Uuid, Vec<tags::Model>> = std::collections::HashMap::new();
+        for row in rows {
+            let tag = tags::Model {
+                id: row.tag_id,
+                name: row.tag_name,
+                created_at: None,
+            };
+            map.entry(row.post_id).or_insert_with(Vec::new).push(tag);
+        }
+        map
+    };
+
+    let mut hydrated = Vec::with_capacity(posts.len());
+    for post in &posts {
+        let user = users_map.get(&post.created_by).cloned();
+        let tags = tags_map.get(&post.id).cloned().unwrap_or_default();
+        hydrated.push(hydrate_post(post, user, tags, truncate_body).await?);
+    }
+
     Ok(hydrated)
 }
 
@@ -87,7 +134,11 @@ pub async fn get_post_by_id(
         .await?;
 
     match post {
-        Some(post) => Ok(Some(hydrate_post(db, post, false).await?)),
+        Some(post) => {
+            let user = post.find_related(users::Entity).one(db).await?;
+            let tags = post.find_related(tags::Entity).all(db).await?;
+            Ok(Some(hydrate_post(&post, user, tags, false).await?))
+        }
         None => Ok(None),
     }
 }
@@ -198,7 +249,11 @@ pub async fn get_post_by_username_and_slug(
         .await?;
 
     match post {
-        Some(post) => Ok(Some(hydrate_post(db, post, false).await?)),
+        Some(post) => {
+            let user = post.find_related(users::Entity).one(db).await?;
+            let tags = post.find_related(tags::Entity).all(db).await?;
+            Ok(Some(hydrate_post(&post, user, tags, false).await?))
+        }
         None => Ok(None),
     }
 }
@@ -291,7 +346,9 @@ pub async fn create_post(
     .await?;
 
     replace_post_tags(db, post.id, &input.tags).await?;
-    hydrate_post(db, post, false).await
+    let user = post.find_related(users::Entity).one(db).await?;
+    let tags = post.find_related(tags::Entity).all(db).await?;
+    hydrate_post(&post, user, tags, false).await
 }
 
 pub async fn is_author(
@@ -343,7 +400,9 @@ pub async fn update_post(
         replace_post_tags(db, post.id, &tags).await?;
     }
 
-    Ok(Some(hydrate_post(db, post, false).await?))
+    let user = post.find_related(users::Entity).one(db).await?;
+    let tags = post.find_related(tags::Entity).all(db).await?;
+    Ok(Some(hydrate_post(&post, user, tags, false).await?))
 }
 
 pub async fn soft_delete_post(db: &DatabaseConnection, post_id: uuid::Uuid) -> Result<bool, DbErr> {
