@@ -1,277 +1,400 @@
-use crate::models::post::Post;
-use crate::models::tag::Tag;
-use std::collections::HashMap;
-use tokio_postgres::Client;
+use crate::entities::{posts, posts_to_tags, tags, users};
+use crate::models::post::{Post, SitemapPost};
+use chrono::Utc;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel,
+    ModelTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+};
 
-/// Escape special LIKE/ILIKE pattern characters (% and _) to prevent pattern injection
-fn escape_like_pattern(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_")
+fn validate_order_field(order_by: Option<&str>) -> posts::Column {
+    match order_by {
+        Some("id") => posts::Column::Id,
+        Some("title") => posts::Column::Title,
+        Some("updated_at") => posts::Column::UpdatedAt,
+        Some("view_count") => posts::Column::ViewCount,
+        Some("like_count") => posts::Column::LikeCount,
+        Some("bookmark_count") => posts::Column::BookmarkCount,
+        _ => posts::Column::CreatedAt,
+    }
 }
 
-/// Fetch and assign tags to posts in a single batch query (avoids N+1)
-async fn fetch_tags_for_posts(
-    client: &Client,
-    posts: &mut [Post],
-) -> Result<(), tokio_postgres::Error> {
-    if posts.is_empty() {
-        return Ok(());
+fn get_order_dir(dir: Option<&crate::handlers::OrderDirection>) -> Order {
+    match dir {
+        Some(crate::handlers::OrderDirection::Asc) => Order::Asc,
+        _ => Order::Desc,
+    }
+}
+
+async fn hydrate_post(
+    db: &DatabaseConnection,
+    post: posts::Model,
+    truncate_body: bool,
+) -> Result<Post, DbErr> {
+    let user = post.find_related(users::Entity).one(db).await?;
+    let post_tags = post.clone().find_related(tags::Entity).all(db).await?;
+    Ok(Post::from_entity(post, user, post_tags, truncate_body))
+}
+
+async fn hydrate_posts(
+    db: &DatabaseConnection,
+    posts: Vec<posts::Model>,
+    truncate_body: bool,
+) -> Result<Vec<Post>, DbErr> {
+    let mut hydrated = Vec::with_capacity(posts.len());
+    for post in posts {
+        hydrated.push(hydrate_post(db, post, truncate_body).await?);
+    }
+    Ok(hydrated)
+}
+
+pub async fn get_all_posts(
+    db: &DatabaseConnection,
+    offset: i64,
+    limit: i64,
+    search: Option<&str>,
+    order_by: Option<&str>,
+    order_direction: Option<&crate::handlers::OrderDirection>,
+) -> Result<(Vec<Post>, i64), DbErr> {
+    let mut query = posts::Entity::find()
+        .filter(posts::Column::Published.eq(true))
+        .filter(posts::Column::DeletedAt.is_null());
+
+    if let Some(search) = search.filter(|s| !s.trim().is_empty()) {
+        query = query.filter(posts::Column::Title.contains(search));
     }
 
-    let post_ids: Vec<uuid::Uuid> = posts.iter().map(|p| p.id).collect();
-    let rows = client
-        .query(
-            "SELECT t.id, t.name, t.created_at, ptt.post_id
-             FROM tags t
-             INNER JOIN posts_to_tags ptt ON t.id = ptt.tag_id
-             WHERE ptt.post_id = ANY($1)
-             ORDER BY t.name",
-            &[&post_ids],
+    let total = query.clone().count(db).await? as i64;
+    let post_models = query
+        .order_by(
+            validate_order_field(order_by),
+            get_order_dir(order_direction),
         )
+        .limit(limit.max(0) as u64)
+        .offset(offset.max(0) as u64)
+        .all(db)
         .await?;
 
-    let mut tags_by_post: HashMap<uuid::Uuid, Vec<Tag>> = HashMap::new();
-    for row in &rows {
-        let post_id: uuid::Uuid = row.get(3);
-        tags_by_post
-            .entry(post_id)
-            .or_default()
-            .push(Tag::from(row));
+    Ok((hydrate_posts(db, post_models, true).await?, total))
+}
+
+pub async fn get_post_by_id(
+    db: &DatabaseConnection,
+    id: uuid::Uuid,
+) -> Result<Option<Post>, DbErr> {
+    let post = posts::Entity::find_by_id(id)
+        .filter(posts::Column::DeletedAt.is_null())
+        .one(db)
+        .await?;
+
+    match post {
+        Some(post) => Ok(Some(hydrate_post(db, post, false).await?)),
+        None => Ok(None),
+    }
+}
+
+pub async fn get_posts_by_username(
+    db: &DatabaseConnection,
+    username: &str,
+    offset: i64,
+    limit: i64,
+) -> Result<(Vec<Post>, i64), DbErr> {
+    let user = users::Entity::find()
+        .filter(users::Column::Username.eq(username))
+        .filter(users::Column::DeletedAt.is_null())
+        .one(db)
+        .await?;
+
+    let Some(user) = user else {
+        return Ok((Vec::new(), 0));
+    };
+
+    let query = user
+        .clone()
+        .find_related(posts::Entity)
+        .filter(posts::Column::Published.eq(true))
+        .filter(posts::Column::DeletedAt.is_null());
+
+    let total = query.clone().count(db).await? as i64;
+    let post_models = query
+        .order_by_desc(posts::Column::CreatedAt)
+        .limit(limit.max(0) as u64)
+        .offset(offset.max(0) as u64)
+        .all(db)
+        .await?;
+
+    Ok((hydrate_posts(db, post_models, true).await?, total))
+}
+
+pub async fn get_random_posts(db: &DatabaseConnection, limit: i64) -> Result<Vec<Post>, DbErr> {
+    let post_models = posts::Entity::find()
+        .filter(posts::Column::Published.eq(true))
+        .filter(posts::Column::DeletedAt.is_null())
+        .order_by(sea_orm::sea_query::Expr::cust("RANDOM()"), Order::Asc)
+        .limit(limit.max(0) as u64)
+        .all(db)
+        .await?;
+
+    hydrate_posts(db, post_models, true).await
+}
+
+pub async fn get_trending_posts(db: &DatabaseConnection, limit: i64) -> Result<Vec<Post>, DbErr> {
+    let post_models = posts::Entity::find()
+        .filter(posts::Column::Published.eq(true))
+        .filter(posts::Column::DeletedAt.is_null())
+        .order_by(
+            sea_orm::sea_query::Expr::cust("like_count * 2 + bookmark_count * 2 + view_count"),
+            Order::Desc,
+        )
+        .limit(limit.max(0) as u64)
+        .all(db)
+        .await?;
+
+    hydrate_posts(db, post_models, true).await
+}
+
+pub async fn get_posts_for_sitemap(
+    db: &DatabaseConnection,
+    limit: i64,
+) -> Result<Vec<SitemapPost>, DbErr> {
+    let post_models = posts::Entity::find()
+        .filter(posts::Column::Published.eq(true))
+        .filter(posts::Column::DeletedAt.is_null())
+        .order_by_desc(posts::Column::CreatedAt)
+        .limit(limit.max(0) as u64)
+        .all(db)
+        .await?;
+
+    let mut sitemap = Vec::with_capacity(post_models.len());
+    for post in post_models {
+        if let Some(user) = post.find_related(users::Entity).one(db).await? {
+            sitemap.push(SitemapPost::from_entities(post, user));
+        }
     }
 
-    for post in posts {
-        post.tags = tags_by_post.remove(&post.id).unwrap_or_default();
+    Ok(sitemap)
+}
+
+pub async fn get_post_by_username_and_slug(
+    db: &DatabaseConnection,
+    username: &str,
+    slug: &str,
+) -> Result<Option<Post>, DbErr> {
+    let user = users::Entity::find()
+        .filter(users::Column::Username.eq(username))
+        .filter(users::Column::DeletedAt.is_null())
+        .one(db)
+        .await?;
+
+    let Some(user) = user else {
+        return Ok(None);
+    };
+
+    let post = user
+        .find_related(posts::Entity)
+        .filter(posts::Column::Slug.eq(slug))
+        .filter(posts::Column::Published.eq(true))
+        .filter(posts::Column::DeletedAt.is_null())
+        .one(db)
+        .await?;
+
+    match post {
+        Some(post) => Ok(Some(hydrate_post(db, post, false).await?)),
+        None => Ok(None),
+    }
+}
+
+async fn find_or_create_tag(db: &DatabaseConnection, name: &str) -> Result<tags::Model, DbErr> {
+    if let Some(tag) = tags::Entity::find()
+        .filter(tags::Column::Name.eq(name))
+        .one(db)
+        .await?
+    {
+        return Ok(tag);
+    }
+
+    tags::ActiveModel {
+        name: Set(name.to_string()),
+        created_at: Set(Some(Utc::now().into())),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+}
+
+async fn replace_post_tags(
+    db: &DatabaseConnection,
+    post_id: uuid::Uuid,
+    tag_names: &[String],
+) -> Result<(), DbErr> {
+    posts_to_tags::Entity::delete_many()
+        .filter(posts_to_tags::Column::PostId.eq(post_id))
+        .exec(db)
+        .await?;
+
+    for name in tag_names
+        .iter()
+        .map(|tag| tag.trim())
+        .filter(|tag| !tag.is_empty())
+    {
+        let tag = find_or_create_tag(db, name).await?;
+        posts_to_tags::ActiveModel {
+            post_id: Set(post_id),
+            tag_id: Set(tag.id),
+        }
+        .insert(db)
+        .await?;
     }
 
     Ok(())
 }
 
-/// Validate order_by field against whitelist using match statement
-/// Returns the validated field name or default "created_at"
-fn validate_order_field(order_by: Option<&str>) -> &'static str {
-    match order_by {
-        Some("id") => "id",
-        Some("title") => "title",
-        Some("created_at") => "created_at",
-        Some("updated_at") => "updated_at",
-        Some("view_count") => "view_count",
-        Some("like_count") => "like_count",
-        Some("bookmark_count") => "bookmark_count",
-        _ => "created_at",
+pub struct CreatePostInput {
+    pub title: String,
+    pub photo_url: Option<String>,
+    pub slug: String,
+    pub body: String,
+    pub published: bool,
+    pub tags: Vec<String>,
+}
+
+pub struct UpdatePostInput {
+    pub title: Option<String>,
+    pub photo_url: Option<String>,
+    pub slug: Option<String>,
+    pub body: Option<String>,
+    pub published: Option<bool>,
+    pub tags: Option<Vec<String>>,
+}
+
+pub async fn create_post(
+    db: &DatabaseConnection,
+    input: CreatePostInput,
+    creator_id: uuid::Uuid,
+) -> Result<Post, DbErr> {
+    let now = Utc::now();
+    let post = posts::ActiveModel {
+        id: Set(uuid::Uuid::new_v4()),
+        title: Set(input.title),
+        created_by: Set(creator_id),
+        body: Set(Some(input.body)),
+        slug: Set(input.slug),
+        photo_url: Set(input.photo_url),
+        published: Set(Some(input.published)),
+        created_at: Set(Some(now.into())),
+        updated_at: Set(Some(now.into())),
+        view_count: Set(Some(0)),
+        like_count: Set(Some(0)),
+        bookmark_count: Set(Some(0)),
+        ..Default::default()
     }
+    .insert(db)
+    .await?;
+
+    replace_post_tags(db, post.id, &input.tags).await?;
+    hydrate_post(db, post, false).await
 }
 
-/// Get order direction string
-fn get_order_dir(dir: Option<&crate::handlers::OrderDirection>) -> &'static str {
-    match dir {
-        Some(crate::handlers::OrderDirection::Asc) => "ASC",
-        _ => "DESC", // Default to DESC
-    }
-}
-
-pub async fn get_all_posts(
-    client: &Client,
-    offset: i64,
-    limit: i64,
-    search: Option<&str>,
-    order_by: Option<&str>,
-    order_direction: Option<&crate::handlers::OrderDirection>,
-) -> Result<(Vec<Post>, i64), tokio_postgres::Error> {
-    let order_field = validate_order_field(order_by);
-    let order_dir = get_order_dir(order_direction);
-    let search_param = search.map(|s| format!("%{}%", escape_like_pattern(s)));
-
-    // Get total count
-    let total: i64 = if let Some(ref search_val) = search_param {
-        client
-            .query_one(
-                "SELECT COUNT(*) FROM posts p INNER JOIN users u ON p.created_by = u.id
-                 WHERE p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $1 OR p.body ILIKE $1 OR u.username ILIKE $1)",
-                &[search_val],
-            )
-            .await?
-            .get(0)
-    } else {
-        client
-            .query_one(
-                "SELECT COUNT(*) FROM posts WHERE published = true AND deleted_at IS NULL",
-                &[],
-            )
-            .await?
-            .get(0)
-    };
-
-    // Build and execute main query
-    let query = if search_param.is_some() {
-        format!(
-            "SELECT p.id, p.title, p.body, p.created_by, p.slug, p.photo_url, p.created_at, p.updated_at, p.deleted_at, p.published, p.view_count, p.like_count, p.bookmark_count, u.id, u.username, u.image
-             FROM posts p INNER JOIN users u ON p.created_by = u.id
-             WHERE p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $1 OR p.body ILIKE $1 OR u.username ILIKE $1)
-             ORDER BY p.{} {} LIMIT $2 OFFSET $3",
-            order_field, order_dir
-        )
-    } else {
-        format!(
-            "SELECT p.id, p.title, p.body, p.created_by, p.slug, p.photo_url, p.created_at, p.updated_at, p.deleted_at, p.published, p.view_count, p.like_count, p.bookmark_count, u.id, u.username, u.image
-             FROM posts p INNER JOIN users u ON p.created_by = u.id
-             WHERE p.published = true AND p.deleted_at IS NULL ORDER BY p.{} {} LIMIT $1 OFFSET $2",
-            order_field, order_dir
-        )
-    };
-
-    let rows = if let Some(ref search_val) = search_param {
-        client.query(&query, &[search_val, &limit, &offset]).await?
-    } else {
-        client.query(&query, &[&limit, &offset]).await?
-    };
-
-    let mut posts: Vec<Post> = rows.iter().map(Post::from).collect();
-    fetch_tags_for_posts(client, &mut posts).await?;
-
-    Ok((posts, total))
-}
-
-pub async fn get_random_posts(
-    client: &Client,
-    limit: i64,
-) -> Result<Vec<Post>, tokio_postgres::Error> {
-    // Use TABLESAMPLE BERNOULLI for efficient random sampling.
-    // This scans only ~5% of the table instead of sorting all rows,
-    // then ORDER BY RANDOM() is applied only to the sampled rows (much faster).
-    let rows = client
-        .query(
-            "SELECT p.id, p.title, p.body, p.created_by, p.slug, p.photo_url,
-                    p.created_at, p.updated_at, p.deleted_at, p.published,
-                    p.view_count, p.like_count, p.bookmark_count, u.id, u.username, u.image
-             FROM (
-                 SELECT * FROM posts TABLESAMPLE BERNOULLI(5)
-             ) p
-             INNER JOIN users u ON p.created_by = u.id
-             WHERE p.published = true AND p.deleted_at IS NULL
-             ORDER BY RANDOM()
-             LIMIT $1",
-            &[&limit],
-        )
+pub async fn is_author(
+    db: &DatabaseConnection,
+    post_id: uuid::Uuid,
+    user_id: uuid::Uuid,
+) -> Result<Option<bool>, DbErr> {
+    let post = posts::Entity::find_by_id(post_id)
+        .filter(posts::Column::DeletedAt.is_null())
+        .one(db)
         .await?;
 
-    let mut posts: Vec<Post> = rows.iter().map(Post::from).collect();
-    fetch_tags_for_posts(client, &mut posts).await?;
-
-    Ok(posts)
+    Ok(post.map(|post| post.created_by == user_id))
 }
 
-pub async fn get_post_by_username_and_slug(
-    client: &Client,
-    username: &str,
-    slug: &str,
-) -> Result<Option<Post>, tokio_postgres::Error> {
-    let row = client
-        .query_opt(
-            "SELECT p.id, p.title, p.body, p.created_by, p.slug, p.photo_url, p.created_at, p.updated_at, p.deleted_at, p.published, p.view_count, p.like_count, p.bookmark_count, u.id, u.username, u.image
-             FROM posts p
-             INNER JOIN users u ON p.created_by = u.id
-             WHERE u.username = $1 AND p.slug = $2 AND p.published = true AND p.deleted_at IS NULL",
-            &[&username, &slug],
-        )
-        .await?;
+pub async fn update_post(
+    db: &DatabaseConnection,
+    post_id: uuid::Uuid,
+    input: UpdatePostInput,
+) -> Result<Option<Post>, DbErr> {
+    let Some(post) = posts::Entity::find_by_id(post_id)
+        .filter(posts::Column::DeletedAt.is_null())
+        .one(db)
+        .await?
+    else {
+        return Ok(None);
+    };
 
-    match row {
-        Some(row) => {
-            let mut post = Post::from_full(&row);
-
-            // Fetch tags for this post
-            let tag_rows = client
-                .query(
-                    "SELECT t.id, t.name, t.created_at 
-                     FROM tags t 
-                     INNER JOIN posts_to_tags ptt ON t.id = ptt.tag_id 
-                     WHERE ptt.post_id = $1 
-                     ORDER BY t.name",
-                    &[&post.id],
-                )
-                .await?;
-
-            let tags: Vec<Tag> = tag_rows.iter().map(Tag::from).collect();
-            post.tags = tags;
-
-            Ok(Some(post))
-        }
-        None => Ok(None),
+    let mut active = post.into_active_model();
+    if let Some(title) = input.title.filter(|value| !value.trim().is_empty()) {
+        active.title = Set(title);
     }
+    if let Some(body) = input.body.filter(|value| !value.trim().is_empty()) {
+        active.body = Set(Some(body));
+    }
+    if let Some(slug) = input.slug.filter(|value| !value.trim().is_empty()) {
+        active.slug = Set(slug);
+    }
+    if input.photo_url.is_some() {
+        active.photo_url = Set(input.photo_url);
+    }
+    if let Some(published) = input.published {
+        active.published = Set(Some(published));
+    }
+    active.updated_at = Set(Some(Utc::now().into()));
+
+    let post = active.update(db).await?;
+    if let Some(tags) = input.tags {
+        replace_post_tags(db, post.id, &tags).await?;
+    }
+
+    Ok(Some(hydrate_post(db, post, false).await?))
+}
+
+pub async fn soft_delete_post(db: &DatabaseConnection, post_id: uuid::Uuid) -> Result<bool, DbErr> {
+    let Some(post) = posts::Entity::find_by_id(post_id)
+        .filter(posts::Column::DeletedAt.is_null())
+        .one(db)
+        .await?
+    else {
+        return Ok(false);
+    };
+
+    let mut active = post.into_active_model();
+    active.deleted_at = Set(Some(Utc::now().into()));
+    active.updated_at = Set(Some(Utc::now().into()));
+    active.update(db).await?;
+    Ok(true)
 }
 
 pub async fn get_posts_by_tag(
-    client: &Client,
+    db: &DatabaseConnection,
     tag_name: &str,
     offset: i64,
     limit: i64,
-    search: Option<&str>,
+    _search: Option<&str>,
     order_by: Option<&str>,
     order_direction: Option<&crate::handlers::OrderDirection>,
-) -> Result<(Vec<Post>, i64), tokio_postgres::Error> {
-    let order_field = validate_order_field(order_by);
-    let order_dir = get_order_dir(order_direction);
-    let search_param = search.map(|s| format!("%{}%", escape_like_pattern(s)));
+) -> Result<(Vec<Post>, i64), DbErr> {
+    let tag = tags::Entity::find()
+        .filter(tags::Column::Name.eq(tag_name))
+        .one(db)
+        .await?;
 
-    // Get total count
-    let total: i64 = if let Some(ref search_val) = search_param {
-        client
-            .query_one(
-                "SELECT COUNT(DISTINCT p.id) FROM posts p
-                 INNER JOIN users u ON p.created_by = u.id
-                 INNER JOIN posts_to_tags ptt ON p.id = ptt.post_id
-                 INNER JOIN tags t ON ptt.tag_id = t.id
-                 WHERE t.name = $1 AND p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $2 OR p.body ILIKE $2 OR u.username ILIKE $2)",
-                &[&tag_name, search_val],
-            )
-            .await?
-            .get(0)
-    } else {
-        client
-            .query_one(
-                "SELECT COUNT(DISTINCT p.id) FROM posts p
-                 INNER JOIN posts_to_tags ptt ON p.id = ptt.post_id
-                 INNER JOIN tags t ON ptt.tag_id = t.id
-                 WHERE t.name = $1 AND p.published = true AND p.deleted_at IS NULL",
-                &[&tag_name],
-            )
-            .await?
-            .get(0)
+    let Some(tag) = tag else {
+        return Ok((Vec::new(), 0));
     };
 
-    // Build and execute main query
-    let query = if search_param.is_some() {
-        format!(
-            "SELECT DISTINCT p.id, p.title, p.body, p.created_by, p.slug, p.photo_url, p.created_at, p.updated_at, p.deleted_at, p.published, p.view_count, p.like_count, p.bookmark_count, u.id, u.username, u.image
-             FROM posts p INNER JOIN users u ON p.created_by = u.id
-             INNER JOIN posts_to_tags ptt ON p.id = ptt.post_id
-             INNER JOIN tags t ON ptt.tag_id = t.id
-             WHERE t.name = $1 AND p.published = true AND p.deleted_at IS NULL AND (p.title ILIKE $2 OR p.body ILIKE $2 OR u.username ILIKE $2)
-             ORDER BY p.{} {} LIMIT $3 OFFSET $4",
-            order_field, order_dir
+    let query = tag
+        .find_related(posts::Entity)
+        .filter(posts::Column::Published.eq(true))
+        .filter(posts::Column::DeletedAt.is_null());
+
+    let total = query.clone().count(db).await? as i64;
+    let post_models = query
+        .order_by(
+            validate_order_field(order_by),
+            get_order_dir(order_direction),
         )
-    } else {
-        format!(
-            "SELECT DISTINCT p.id, p.title, p.body, p.created_by, p.slug, p.photo_url, p.created_at, p.updated_at, p.deleted_at, p.published, p.view_count, p.like_count, p.bookmark_count, u.id, u.username, u.image
-             FROM posts p INNER JOIN users u ON p.created_by = u.id
-             INNER JOIN posts_to_tags ptt ON p.id = ptt.post_id
-             INNER JOIN tags t ON ptt.tag_id = t.id
-             WHERE t.name = $1 AND p.published = true AND p.deleted_at IS NULL ORDER BY p.{} {} LIMIT $2 OFFSET $3",
-            order_field, order_dir
-        )
-    };
+        .limit(limit.max(0) as u64)
+        .offset(offset.max(0) as u64)
+        .all(db)
+        .await?;
 
-    let rows = if let Some(ref search_val) = search_param {
-        client
-            .query(&query, &[&tag_name, search_val, &limit, &offset])
-            .await?
-    } else {
-        client.query(&query, &[&tag_name, &limit, &offset]).await?
-    };
-
-    let mut posts: Vec<Post> = rows.iter().map(Post::from).collect();
-    fetch_tags_for_posts(client, &mut posts).await?;
-
-    Ok((posts, total))
+    Ok((hydrate_posts(db, post_models, true).await?, total))
 }

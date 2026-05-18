@@ -1,18 +1,19 @@
+use crate::response::ApiResponse;
 use axum::{
     Json,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use deadpool_postgres::PoolError;
-use serde_json::json;
+use sea_orm::DbErr;
 
 #[derive(Debug)]
 #[allow(dead_code)]
 pub enum AppError {
-    Database(tokio_postgres::Error),
-    Pool(PoolError),
+    Database(DbErr),
     NotFound(String),
     BadRequest(String),
+    Unauthorized(String),
+    Forbidden(String),
     InternalServerError(String),
 }
 
@@ -30,33 +31,28 @@ impl IntoResponse for AppError {
                 };
                 (StatusCode::INTERNAL_SERVER_ERROR, error_msg)
             }
-            AppError::Pool(e) => (
-                StatusCode::SERVICE_UNAVAILABLE,
-                format!("Connection pool error: {}", e),
-            ),
+
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
+            AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
             AppError::InternalServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
         };
 
-        let body = Json(json!({
-            "success": false,
-            "error": error_message,
-            "data": serde_json::Value::Null
-        }));
+        let body = Json(ApiResponse::<serde_json::Value> {
+            success: false,
+            message: error_message.clone(),
+            data: None,
+            error: Some(error_message),
+            meta: None,
+        });
 
         (status, body).into_response()
     }
 }
 
-impl From<tokio_postgres::Error> for AppError {
-    fn from(err: tokio_postgres::Error) -> Self {
+impl From<DbErr> for AppError {
+    fn from(err: DbErr) -> Self {
         AppError::Database(err)
-    }
-}
-
-impl From<PoolError> for AppError {
-    fn from(err: PoolError) -> Self {
-        AppError::Pool(err)
     }
 }

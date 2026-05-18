@@ -6,8 +6,7 @@ use std::time::Duration;
 // ============================================================================
 
 const DEFAULT_PORT: u16 = 8080;
-const DEFAULT_DATABASE_URL: &str =
-    "host=localhost user=postgres password=postgres dbname=axumbackend";
+const DEFAULT_DATABASE_URL: &str = "postgresql://postgres:postgres@localhost:5432/axumbackend";
 const DEFAULT_POOL_MAX_SIZE: usize = 20;
 const DEFAULT_CONNECTION_TIMEOUT_SECS: u64 = 30;
 

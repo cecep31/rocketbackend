@@ -1,2 +1,12 @@
+pub mod auth;
+pub mod bookmark;
+pub mod comment;
+pub mod holding;
+pub mod notification;
 pub mod post;
+pub mod post_like;
+pub mod post_view;
+pub mod report;
 pub mod tag;
+pub mod user;
+pub mod user_follow;
