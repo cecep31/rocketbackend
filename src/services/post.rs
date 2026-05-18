@@ -2,9 +2,10 @@ use crate::entities::{posts, posts_to_tags, tags, users};
 use crate::models::post::{Post, SitemapPost};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, FromQueryResult, IntoActiveModel,
-    ModelTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, FromQueryResult,
+    IntoActiveModel, ModelTrait, Order, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
 };
+use std::collections::HashSet;
 
 fn validate_order_field(order_by: Option<&str>) -> posts::Column {
     match order_by {
@@ -72,7 +73,8 @@ async fn hydrate_posts(
         .all(db)
         .await?;
 
-        let mut map: std::collections::HashMap<uuid::Uuid, Vec<tags::Model>> = std::collections::HashMap::new();
+        let mut map: std::collections::HashMap<uuid::Uuid, Vec<tags::Model>> =
+            std::collections::HashMap::new();
         for row in rows {
             let tag = tags::Model {
                 id: row.tag_id,
@@ -276,6 +278,23 @@ async fn find_or_create_tag(db: &DatabaseConnection, name: &str) -> Result<tags:
     .await
 }
 
+fn normalize_tag_names(tag_names: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut normalized = Vec::new();
+
+    for name in tag_names
+        .iter()
+        .map(|tag| tag.trim())
+        .filter(|tag| !tag.is_empty())
+    {
+        if seen.insert(name.to_string()) {
+            normalized.push(name.to_string());
+        }
+    }
+
+    normalized
+}
+
 async fn replace_post_tags(
     db: &DatabaseConnection,
     post_id: uuid::Uuid,
@@ -286,12 +305,8 @@ async fn replace_post_tags(
         .exec(db)
         .await?;
 
-    for name in tag_names
-        .iter()
-        .map(|tag| tag.trim())
-        .filter(|tag| !tag.is_empty())
-    {
-        let tag = find_or_create_tag(db, name).await?;
+    for name in normalize_tag_names(tag_names) {
+        let tag = find_or_create_tag(db, &name).await?;
         posts_to_tags::ActiveModel {
             post_id: Set(post_id),
             tag_id: Set(tag.id),
@@ -456,4 +471,25 @@ pub async fn get_posts_by_tag(
         .await?;
 
     Ok((hydrate_posts(db, post_models, true).await?, total))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_tag_names;
+
+    #[test]
+    fn normalize_tag_names_trims_filters_empty_and_deduplicates() {
+        let input = vec![
+            " rust ".to_string(),
+            "".to_string(),
+            "axum".to_string(),
+            "rust".to_string(),
+            "   ".to_string(),
+            "sea-orm".to_string(),
+        ];
+
+        let normalized = normalize_tag_names(&input);
+
+        assert_eq!(normalized, vec!["rust", "axum", "sea-orm"]);
+    }
 }
