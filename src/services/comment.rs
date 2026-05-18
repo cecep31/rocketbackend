@@ -43,7 +43,8 @@ async fn load_comment_user_map(
     db: &DatabaseConnection,
     comments: &[post_comments::Model],
 ) -> Result<std::collections::HashMap<Uuid, UserResponse>, DbErr> {
-    user_hydration::load_user_response_map(db, comments.iter().map(|comment| comment.created_by)).await
+    user_hydration::load_user_response_map(db, comments.iter().map(|comment| comment.created_by))
+        .await
 }
 
 pub async fn create_comment(

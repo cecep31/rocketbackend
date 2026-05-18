@@ -58,7 +58,8 @@ pub async fn get_users(
         .all(db)
         .await?;
 
-    let users_by_id = user_hydration::load_user_response_map(db, user_models.iter().map(|user| user.id)).await?;
+    let users_by_id =
+        user_hydration::load_user_response_map(db, user_models.iter().map(|user| user.id)).await?;
     let responses = user_models
         .into_iter()
         .map(|user| {

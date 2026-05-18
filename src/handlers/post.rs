@@ -63,6 +63,15 @@ pub enum OrderDirection {
     Desc,
 }
 
+impl From<OrderDirection> for services::post::SortDirection {
+    fn from(value: OrderDirection) -> Self {
+        match value {
+            OrderDirection::Asc => Self::Asc,
+            OrderDirection::Desc => Self::Desc,
+        }
+    }
+}
+
 #[derive(Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct PaginationQuery {
@@ -163,13 +172,13 @@ fn get_pagination_params(
     i64,
     Option<&str>,
     Option<&str>,
-    Option<&OrderDirection>,
+    Option<services::post::SortDirection>,
 ) {
     let offset = query.offset.unwrap_or(0);
     let limit = query.limit.unwrap_or(10);
     let search = query.search.as_deref();
     let order_by = query.order_by.as_deref();
-    let order_direction = query.order_direction.as_ref();
+    let order_direction = query.order_direction.map(Into::into);
     (offset, limit, search, order_by, order_direction)
 }
 

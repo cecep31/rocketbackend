@@ -8,8 +8,6 @@ mod report;
 mod tag;
 mod user;
 
-pub use post::OrderDirection;
-
 use crate::database::DbPool;
 use axum::Router;
 use tower_http::cors::CorsLayer;

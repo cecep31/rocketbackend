@@ -9,5 +9,5 @@ pub mod post_view;
 pub mod report;
 pub mod tag;
 pub mod user;
-pub mod user_hydration;
 pub mod user_follow;
+pub mod user_hydration;

@@ -7,6 +7,12 @@ use sea_orm::{
 };
 use std::collections::HashSet;
 
+#[derive(Clone, Copy)]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
 fn validate_order_field(order_by: Option<&str>) -> posts::Column {
     match order_by {
         Some("id") => posts::Column::Id,
@@ -19,9 +25,9 @@ fn validate_order_field(order_by: Option<&str>) -> posts::Column {
     }
 }
 
-fn get_order_dir(dir: Option<&crate::handlers::OrderDirection>) -> Order {
+fn get_order_dir(dir: Option<SortDirection>) -> Order {
     match dir {
-        Some(crate::handlers::OrderDirection::Asc) => Order::Asc,
+        Some(SortDirection::Asc) => Order::Asc,
         _ => Order::Desc,
     }
 }
@@ -81,7 +87,7 @@ async fn hydrate_posts(
                 name: row.tag_name,
                 created_at: None,
             };
-            map.entry(row.post_id).or_insert_with(Vec::new).push(tag);
+            map.entry(row.post_id).or_default().push(tag);
         }
         map
     };
@@ -102,7 +108,7 @@ pub async fn get_all_posts(
     limit: i64,
     search: Option<&str>,
     order_by: Option<&str>,
-    order_direction: Option<&crate::handlers::OrderDirection>,
+    order_direction: Option<SortDirection>,
 ) -> Result<(Vec<Post>, i64), DbErr> {
     let mut query = posts::Entity::find()
         .filter(posts::Column::Published.eq(true))
@@ -455,7 +461,7 @@ pub async fn get_posts_by_tag(
     limit: i64,
     _search: Option<&str>,
     order_by: Option<&str>,
-    order_direction: Option<&crate::handlers::OrderDirection>,
+    order_direction: Option<SortDirection>,
 ) -> Result<(Vec<Post>, i64), DbErr> {
     let tag = tags::Entity::find()
         .filter(tags::Column::Name.eq(tag_name))

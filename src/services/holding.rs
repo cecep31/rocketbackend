@@ -304,10 +304,10 @@ pub async fn update_holding(
         return Err(HoldingError::NotFound);
     };
 
-    if let Some(holding_type_id) = input.holding_type_id {
-        if !holding_type_exists(db, holding_type_id).await? {
-            return Err(HoldingError::HoldingTypeNotFound);
-        }
+    if let Some(holding_type_id) = input.holding_type_id
+        && !holding_type_exists(db, holding_type_id).await?
+    {
+        return Err(HoldingError::HoldingTypeNotFound);
     }
 
     let mut active = existing.into_active_model();

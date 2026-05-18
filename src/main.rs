@@ -1,13 +1,4 @@
-mod auth;
-mod config;
-mod database;
-mod entities;
-mod error;
-mod handlers;
-mod models;
-mod response;
-mod services;
-
+use axumbackend::{config, database, handlers};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]

@@ -60,10 +60,12 @@ async fn hydrate_bookmark(
     db: &DatabaseConnection,
     bookmark: post_bookmarks::Model,
 ) -> Result<BookmarkResponse, DbErr> {
-    let post = match bookmark.clone().find_related(posts::Entity).one(db).await? {
-        Some(post_model) => Some(Post::from_entity(post_model, None, Vec::new(), true)),
-        None => None,
-    };
+    let post = bookmark
+        .clone()
+        .find_related(posts::Entity)
+        .one(db)
+        .await?
+        .map(|post_model| Post::from_entity(post_model, None, Vec::new(), true));
     let folder = match bookmark
         .clone()
         .find_related(bookmark_folders::Entity)
@@ -88,10 +90,10 @@ pub async fn toggle_bookmark(
         return Err(BookmarkError::PostNotFound);
     }
 
-    if let Some(folder_id) = folder_id {
-        if find_folder(db, folder_id, user_id).await?.is_none() {
-            return Err(BookmarkError::FolderNotFound);
-        }
+    if let Some(folder_id) = folder_id
+        && find_folder(db, folder_id, user_id).await?.is_none()
+    {
+        return Err(BookmarkError::FolderNotFound);
     }
 
     if let Some(existing) = post_bookmarks::Entity::find()
@@ -190,10 +192,10 @@ pub async fn move_bookmark(
     user_id: Uuid,
     folder_id: Option<Uuid>,
 ) -> Result<BookmarkResponse, BookmarkError> {
-    if let Some(folder_id) = folder_id {
-        if find_folder(db, folder_id, user_id).await?.is_none() {
-            return Err(BookmarkError::FolderNotFound);
-        }
+    if let Some(folder_id) = folder_id
+        && find_folder(db, folder_id, user_id).await?.is_none()
+    {
+        return Err(BookmarkError::FolderNotFound);
     }
     let Some(bookmark) = post_bookmarks::Entity::find_by_id(bookmark_id)
         .filter(post_bookmarks::Column::UserId.eq(user_id))

@@ -4,8 +4,8 @@ use crate::models::user::UserResponse;
 use crate::services::user_hydration;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, Set,
 };
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -72,10 +72,10 @@ pub async fn record_view(
         return Err(PostViewError::PostNotFound);
     }
 
-    if let Some(user_id) = user_id {
-        if has_user_viewed(db, post_id, user_id).await? {
-            return Ok(());
-        }
+    if let Some(user_id) = user_id
+        && has_user_viewed(db, post_id, user_id).await?
+    {
+        return Ok(());
     }
 
     let now = Utc::now();

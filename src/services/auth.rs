@@ -222,13 +222,13 @@ pub async fn refresh_token(
         .await?
         .ok_or(AuthError::InvalidToken)?;
 
-    if let Some(expires_at) = session.expires_at {
-        if expires_at.with_timezone(&Utc) < Utc::now() {
-            let _ = sessions::Entity::delete_by_id(refresh_token.to_string())
-                .exec(db)
-                .await;
-            return Err(AuthError::InvalidToken);
-        }
+    if let Some(expires_at) = session.expires_at
+        && expires_at.with_timezone(&Utc) < Utc::now()
+    {
+        let _ = sessions::Entity::delete_by_id(refresh_token.to_string())
+            .exec(db)
+            .await;
+        return Err(AuthError::InvalidToken);
     }
 
     let user = users::Entity::find_by_id(session.user_id)
