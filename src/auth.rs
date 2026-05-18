@@ -1,3 +1,4 @@
+use crate::config::JwtConfig;
 use crate::error::AppError;
 use axum::{
     extract::FromRequestParts,
@@ -6,7 +7,6 @@ use axum::{
 };
 use jsonwebtoken::{DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
-use std::env;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,10 +26,6 @@ pub struct AuthUser {
     pub email: String,
     pub username: Option<String>,
     pub is_super_admin: bool,
-}
-
-fn jwt_secret() -> String {
-    env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key".to_string())
 }
 
 impl<S> FromRequestParts<S> for AuthUser
@@ -53,7 +49,7 @@ where
 
         let token = decode::<Claims>(
             token,
-            &DecodingKey::from_secret(jwt_secret().as_bytes()),
+            &DecodingKey::from_secret(JwtConfig::get().secret.as_bytes()),
             &Validation::default(),
         )
         .map_err(|_| (StatusCode::UNAUTHORIZED, "invalid or expired token").into_response())?;

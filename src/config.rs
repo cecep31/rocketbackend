@@ -1,4 +1,5 @@
 use std::env;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 // ============================================================================
@@ -9,6 +10,8 @@ const DEFAULT_PORT: u16 = 8080;
 const DEFAULT_DATABASE_URL: &str = "postgresql://postgres:postgres@localhost:5432/axumbackend";
 const DEFAULT_POOL_MAX_SIZE: usize = 20;
 const DEFAULT_CONNECTION_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_JWT_SECRET: &str = "your-secret-key";
+const DEFAULT_JWT_EXPIRY_HOURS: i64 = 3;
 
 // ============================================================================
 // Configuration Structures
@@ -20,6 +23,7 @@ pub struct Config {
     pub port: u16,
     pub database_url: String,
     pub db_pool: PoolConfig,
+    pub jwt: JwtConfig,
 }
 
 /// Database connection pool configuration
@@ -27,6 +31,32 @@ pub struct Config {
 pub struct PoolConfig {
     pub max_size: usize,
     pub connection_timeout: Duration,
+}
+
+/// JWT authentication configuration
+#[derive(Debug, Clone)]
+pub struct JwtConfig {
+    pub secret: String,
+    pub expiry_hours: i64,
+}
+
+static JWT_CONFIG: OnceLock<JwtConfig> = OnceLock::new();
+
+impl JwtConfig {
+    fn from_env() -> Self {
+        Self {
+            secret: env::var("JWT_SECRET").unwrap_or_else(|_| DEFAULT_JWT_SECRET.to_string()),
+            expiry_hours: parse_i64("JWT_EXPIRY_HOURS", DEFAULT_JWT_EXPIRY_HOURS),
+        }
+    }
+
+    pub fn init(cfg: JwtConfig) {
+        JWT_CONFIG.set(cfg).expect("JwtConfig already initialized");
+    }
+
+    pub fn get() -> &'static JwtConfig {
+        JWT_CONFIG.get().expect("JwtConfig not initialized")
+    }
 }
 
 // ============================================================================
@@ -43,6 +73,8 @@ impl Config {
     /// - `DB_POOL_CONNECTION_TIMEOUT`: Connection timeout in seconds (default: 30)
     /// - `DB_POOL_MAX_LIFETIME`: Max connection lifetime in seconds, 0 = no limit (default: 1800)
     /// - `DB_POOL_IDLE_TIMEOUT`: Idle timeout in seconds, 0 = no limit (default: 600)
+    /// - `JWT_SECRET`: Secret key for signing JWT tokens (default: "your-secret-key")
+    /// - `JWT_EXPIRY_HOURS`: Access token expiry in hours (default: 3)
     ///
     /// # Panics
     /// Panics if numeric values cannot be parsed.
@@ -52,6 +84,7 @@ impl Config {
             database_url: env::var("DATABASE_URL")
                 .unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_string()),
             db_pool: PoolConfig::from_env(),
+            jwt: JwtConfig::from_env(),
         }
     }
 }
@@ -94,4 +127,12 @@ fn parse_usize(key: &str, default: usize) -> usize {
         .unwrap_or_else(|_| default.to_string())
         .parse::<usize>()
         .unwrap_or_else(|_| panic!("{key} must be a valid usize number"))
+}
+
+/// Parse an environment variable as i64 with default fallback.
+fn parse_i64(key: &str, default: i64) -> i64 {
+    env::var(key)
+        .unwrap_or_else(|_| default.to_string())
+        .parse::<i64>()
+        .unwrap_or_else(|_| panic!("{key} must be a valid i64 number"))
 }

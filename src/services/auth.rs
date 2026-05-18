@@ -1,4 +1,5 @@
 use crate::auth::Claims;
+use crate::config::JwtConfig;
 use crate::entities::{sessions, users};
 use bcrypt::{DEFAULT_COST, hash, verify};
 use chrono::{Duration, Utc};
@@ -8,7 +9,6 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
 };
 use serde::Serialize;
-use std::env;
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -60,18 +60,6 @@ impl From<bcrypt::BcryptError> for AuthError {
     }
 }
 
-fn jwt_secret() -> String {
-    env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key".to_string())
-}
-
-fn jwt_expiry_hours() -> i64 {
-    env::var("JWT_EXPIRY_HOURS")
-        .ok()
-        .and_then(|value| value.parse::<i64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(3)
-}
-
 fn generate_refresh_token() -> String {
     let random: String = rand::thread_rng()
         .sample_iter(&Alphanumeric)
@@ -95,7 +83,8 @@ async fn create_token_and_session(
     user_agent: Option<String>,
 ) -> Result<AuthTokenResponse, AuthError> {
     let now = Utc::now();
-    let exp = now + Duration::hours(jwt_expiry_hours());
+    let jwt = JwtConfig::get();
+    let exp = now + Duration::hours(jwt.expiry_hours);
     let claims = Claims {
         user_id: user.id,
         username: user.username.clone(),
@@ -108,7 +97,7 @@ async fn create_token_and_session(
     let access_token = encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(jwt_secret().as_bytes()),
+        &EncodingKey::from_secret(jwt.secret.as_bytes()),
     )?;
 
     let refresh_token = generate_refresh_token();

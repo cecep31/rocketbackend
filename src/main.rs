@@ -32,6 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let config = config::Config::from_env();
+    config::JwtConfig::init(config.jwt.clone());
 
     // Create connection pool with configuration from environment
     let pool = database::create_pool(&config.database_url, &config.db_pool)
