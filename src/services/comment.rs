@@ -1,10 +1,11 @@
-use crate::entities::{post_comments, posts, profiles, users};
+use crate::entities::{post_comments, posts};
 use crate::models::comment::CommentResponse;
 use crate::models::user::UserResponse;
+use crate::services::user_hydration;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel,
-    ModelTrait, QueryFilter, QueryOrder, Set,
+    QueryFilter, QueryOrder, Set,
 };
 use uuid::Uuid;
 
@@ -30,18 +31,19 @@ async fn post_exists(db: &DatabaseConnection, post_id: Uuid) -> Result<bool, DbE
         .is_some())
 }
 
-async fn hydrate_comment(
-    db: &DatabaseConnection,
+fn hydrate_comment(
     comment: post_comments::Model,
-) -> Result<CommentResponse, DbErr> {
-    let user_response = match comment.clone().find_related(users::Entity).one(db).await? {
-        Some(user) => {
-            let profile = user.clone().find_related(profiles::Entity).one(db).await?;
-            Some(UserResponse::from_entity(user, profile, None))
-        }
-        None => None,
-    };
-    Ok(CommentResponse::from_entity(comment, user_response))
+    users_by_id: &std::collections::HashMap<Uuid, UserResponse>,
+) -> CommentResponse {
+    let user_response = users_by_id.get(&comment.created_by).cloned();
+    CommentResponse::from_entity(comment, user_response)
+}
+
+async fn load_comment_user_map(
+    db: &DatabaseConnection,
+    comments: &[post_comments::Model],
+) -> Result<std::collections::HashMap<Uuid, UserResponse>, DbErr> {
+    user_hydration::load_user_response_map(db, comments.iter().map(|comment| comment.created_by)).await
 }
 
 pub async fn create_comment(
@@ -68,7 +70,8 @@ pub async fn create_comment(
     .insert(db)
     .await?;
 
-    Ok(hydrate_comment(db, comment).await?)
+    let users_by_id = load_comment_user_map(db, std::slice::from_ref(&comment)).await?;
+    Ok(hydrate_comment(comment, &users_by_id))
 }
 
 pub async fn get_comments_by_post_id(
@@ -86,10 +89,11 @@ pub async fn get_comments_by_post_id(
         .all(db)
         .await?;
 
-    let mut responses = Vec::with_capacity(comments.len());
-    for comment in comments {
-        responses.push(hydrate_comment(db, comment).await?);
-    }
+    let users_by_id = load_comment_user_map(db, &comments).await?;
+    let responses = comments
+        .into_iter()
+        .map(|comment| hydrate_comment(comment, &users_by_id))
+        .collect();
     Ok(responses)
 }
 
@@ -116,7 +120,8 @@ pub async fn update_comment(
     active.updated_at = Set(Some(Utc::now().into()));
     let updated = active.update(db).await?;
 
-    Ok(hydrate_comment(db, updated).await?)
+    let users_by_id = load_comment_user_map(db, std::slice::from_ref(&updated)).await?;
+    Ok(hydrate_comment(updated, &users_by_id))
 }
 
 pub async fn delete_comment(

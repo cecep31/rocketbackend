@@ -1,15 +1,19 @@
-use crate::entities::{profiles, users};
+use crate::entities::users;
 use crate::models::user::UserResponse;
+use crate::services::user_hydration;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel,
-    ModelTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
 };
 use uuid::Uuid;
 
 async fn hydrate_user(db: &DatabaseConnection, user: users::Model) -> Result<UserResponse, DbErr> {
-    let profile = user.clone().find_related(profiles::Entity).one(db).await?;
-    Ok(UserResponse::from_entity(user, profile, None))
+    let users_by_id = user_hydration::load_user_response_map(db, [user.id]).await?;
+    Ok(users_by_id
+        .get(&user.id)
+        .cloned()
+        .unwrap_or_else(|| UserResponse::from_entity(user, None, None)))
 }
 
 pub async fn get_by_id(db: &DatabaseConnection, id: Uuid) -> Result<Option<UserResponse>, DbErr> {
@@ -54,10 +58,16 @@ pub async fn get_users(
         .all(db)
         .await?;
 
-    let mut responses = Vec::with_capacity(user_models.len());
-    for user in user_models {
-        responses.push(hydrate_user(db, user).await?);
-    }
+    let users_by_id = user_hydration::load_user_response_map(db, user_models.iter().map(|user| user.id)).await?;
+    let responses = user_models
+        .into_iter()
+        .map(|user| {
+            users_by_id
+                .get(&user.id)
+                .cloned()
+                .unwrap_or_else(|| UserResponse::from_entity(user, None, None))
+        })
+        .collect();
 
     Ok((responses, total))
 }

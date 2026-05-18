@@ -217,12 +217,24 @@ pub async fn get_posts_for_sitemap(
         .all(db)
         .await?;
 
-    let mut sitemap = Vec::with_capacity(post_models.len());
-    for post in post_models {
-        if let Some(user) = post.find_related(users::Entity).one(db).await? {
-            sitemap.push(SitemapPost::from_entities(post, user));
-        }
-    }
+    let users_by_id: std::collections::HashMap<uuid::Uuid, users::Model> = users::Entity::find()
+        .filter(users::Column::Id.is_in(post_models.iter().map(|post| post.created_by)))
+        .filter(users::Column::DeletedAt.is_null())
+        .all(db)
+        .await?
+        .into_iter()
+        .map(|user| (user.id, user))
+        .collect();
+
+    let sitemap = post_models
+        .into_iter()
+        .filter_map(|post| {
+            users_by_id
+                .get(&post.created_by)
+                .cloned()
+                .map(|user| SitemapPost::from_entities(post, user))
+        })
+        .collect();
 
     Ok(sitemap)
 }

@@ -1,9 +1,10 @@
-use crate::entities::{post_views, posts, profiles, users};
+use crate::entities::{post_views, posts};
 use crate::models::post_view::{PostViewResponse, PostViewStats, ViewStatusResponse};
 use crate::models::user::UserResponse;
+use crate::services::user_hydration;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
 };
 use std::collections::HashSet;
@@ -43,18 +44,21 @@ async fn has_user_viewed(
         .is_some())
 }
 
-async fn hydrate_view(
-    db: &DatabaseConnection,
+fn hydrate_view(
     view: post_views::Model,
-) -> Result<PostViewResponse, DbErr> {
-    let user_response = match view.clone().find_related(users::Entity).one(db).await? {
-        Some(user) => {
-            let profile = user.clone().find_related(profiles::Entity).one(db).await?;
-            Some(UserResponse::from_entity(user, profile, None))
-        }
-        None => None,
-    };
-    Ok(PostViewResponse::from_entity(view, user_response))
+    users_by_id: &std::collections::HashMap<Uuid, UserResponse>,
+) -> PostViewResponse {
+    let user_response = view
+        .user_id
+        .and_then(|user_id| users_by_id.get(&user_id).cloned());
+    PostViewResponse::from_entity(view, user_response)
+}
+
+async fn load_view_user_map(
+    db: &DatabaseConnection,
+    views: &[post_views::Model],
+) -> Result<std::collections::HashMap<Uuid, UserResponse>, DbErr> {
+    user_hydration::load_user_response_map(db, views.iter().filter_map(|view| view.user_id)).await
 }
 
 pub async fn record_view(
@@ -113,10 +117,11 @@ pub async fn get_views_by_post_id(
         .all(db)
         .await?;
 
-    let mut views = Vec::with_capacity(view_models.len());
-    for view in view_models {
-        views.push(hydrate_view(db, view).await?);
-    }
+    let users_by_id = load_view_user_map(db, &view_models).await?;
+    let views = view_models
+        .into_iter()
+        .map(|view| hydrate_view(view, &users_by_id))
+        .collect();
 
     Ok((views, total))
 }

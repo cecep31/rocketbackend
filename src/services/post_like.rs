@@ -1,11 +1,12 @@
-use crate::entities::{post_likes, posts, profiles, users};
+use crate::entities::{post_likes, posts};
 use crate::models::post_like::{
     LikeStatusResponse, PostLikeListResponse, PostLikeResponse, PostLikeStats,
 };
 use crate::models::user::UserResponse;
+use crate::services::user_hydration;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set,
 };
 use uuid::Uuid;
@@ -42,18 +43,19 @@ async fn like_exists(db: &DatabaseConnection, post_id: Uuid, user_id: Uuid) -> R
         .is_some())
 }
 
-async fn hydrate_like(
-    db: &DatabaseConnection,
+fn hydrate_like(
     like: post_likes::Model,
-) -> Result<PostLikeResponse, DbErr> {
-    let user_response = match like.clone().find_related(users::Entity).one(db).await? {
-        Some(user) => {
-            let profile = user.clone().find_related(profiles::Entity).one(db).await?;
-            Some(UserResponse::from_entity(user, profile, None))
-        }
-        None => None,
-    };
-    Ok(PostLikeResponse::from_entity(like, user_response))
+    users_by_id: &std::collections::HashMap<Uuid, UserResponse>,
+) -> PostLikeResponse {
+    let user_response = users_by_id.get(&like.user_id).cloned();
+    PostLikeResponse::from_entity(like, user_response)
+}
+
+async fn load_like_user_map(
+    db: &DatabaseConnection,
+    likes: &[post_likes::Model],
+) -> Result<std::collections::HashMap<Uuid, UserResponse>, DbErr> {
+    user_hydration::load_user_response_map(db, likes.iter().map(|like| like.user_id)).await
 }
 
 pub async fn like_post(
@@ -128,10 +130,11 @@ pub async fn get_likes_by_post_id(
         .all(db)
         .await?;
 
-    let mut likes = Vec::with_capacity(like_models.len());
-    for like in like_models {
-        likes.push(hydrate_like(db, like).await?);
-    }
+    let users_by_id = load_like_user_map(db, &like_models).await?;
+    let likes = like_models
+        .into_iter()
+        .map(|like| hydrate_like(like, &users_by_id))
+        .collect();
 
     Ok(PostLikeListResponse {
         likes,
