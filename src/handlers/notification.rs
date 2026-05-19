@@ -1,5 +1,6 @@
 use crate::auth::AuthUser;
 use crate::database::DbPool;
+use crate::dto::notification::{NotificationPath, NotificationQuery};
 use crate::error::AppError;
 use crate::models::notification::{MarkAllReadResponse, NotificationResponse, UnreadCountResponse};
 use crate::response::ApiResponse;
@@ -10,24 +11,6 @@ use axum::{
     routing::{get, patch},
 };
 use axum_valid::Valid;
-use serde::Deserialize;
-use uuid::Uuid;
-use validator::Validate;
-
-#[derive(Deserialize, Validate)]
-pub struct NotificationQuery {
-    #[serde(default)]
-    unread: bool,
-    #[validate(range(min = 1, max = 100))]
-    limit: Option<i64>,
-    #[validate(range(min = 0, max = 10_000))]
-    offset: Option<i64>,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct NotificationPath {
-    id: Uuid,
-}
 
 pub async fn get_notifications(
     State(pool): State<DbPool>,

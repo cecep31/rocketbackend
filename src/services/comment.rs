@@ -100,11 +100,13 @@ pub async fn get_comments_by_post_id(
 
 pub async fn update_comment(
     db: &DatabaseConnection,
+    post_id: Uuid,
     comment_id: Uuid,
     text: String,
     user_id: Uuid,
 ) -> Result<CommentResponse, CommentError> {
     let Some(comment) = post_comments::Entity::find_by_id(comment_id)
+        .filter(post_comments::Column::PostId.eq(post_id))
         .filter(post_comments::Column::DeletedAt.is_null())
         .one(db)
         .await?
@@ -127,10 +129,12 @@ pub async fn update_comment(
 
 pub async fn delete_comment(
     db: &DatabaseConnection,
+    post_id: Uuid,
     comment_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), CommentError> {
     let Some(comment) = post_comments::Entity::find_by_id(comment_id)
+        .filter(post_comments::Column::PostId.eq(post_id))
         .filter(post_comments::Column::DeletedAt.is_null())
         .one(db)
         .await?

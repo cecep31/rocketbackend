@@ -1,5 +1,10 @@
 use crate::auth::AuthUser;
 use crate::database::DbPool;
+use crate::dto::common::{PostIdPath, UsernamePath};
+use crate::dto::post::{
+    CreatePostRequest, PostPaginationQuery, PostPath, RandomPostQuery, TagPath, UpdatePostRequest,
+    post_pagination_params,
+};
 use crate::error::AppError;
 use crate::models::post::{Post, SitemapPost};
 use crate::response::ApiResponse;
@@ -7,89 +12,10 @@ use crate::services;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    routing::{get, post, put},
+    routing::{get, post},
 };
 use axum_valid::Valid;
-use once_cell::sync::Lazy;
-use regex::Regex;
-use serde::Deserialize;
 use uuid::Uuid;
-use validator::Validate;
-
-#[derive(Deserialize, Validate)]
-pub struct CreatePostRequest {
-    #[validate(length(min = 7))]
-    title: String,
-    photo_url: Option<String>,
-    #[validate(length(min = 7, max = 100), regex(path = *SLUG_RE))]
-    slug: String,
-    #[validate(length(min = 10))]
-    body: String,
-    #[serde(default)]
-    published: bool,
-    #[serde(default)]
-    tags: Vec<String>,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct UpdatePostRequest {
-    #[validate(length(min = 1))]
-    title: Option<String>,
-    photo_url: Option<String>,
-    #[validate(length(min = 1, max = 100), regex(path = *SLUG_RE))]
-    slug: Option<String>,
-    #[validate(length(min = 1))]
-    body: Option<String>,
-    published: Option<bool>,
-    tags: Option<Vec<String>>,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct CommentRequest {
-    #[validate(length(min = 1, max = 1000))]
-    text: String,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct RandomPostQuery {
-    #[validate(range(min = 1, max = 100))]
-    limit: Option<i64>,
-}
-
-#[derive(Deserialize, Clone, Copy)]
-#[serde(rename_all = "camelCase")]
-pub enum OrderDirection {
-    Asc,
-    Desc,
-}
-
-impl From<OrderDirection> for services::post::SortDirection {
-    fn from(value: OrderDirection) -> Self {
-        match value {
-            OrderDirection::Asc => Self::Asc,
-            OrderDirection::Desc => Self::Desc,
-        }
-    }
-}
-
-#[derive(Deserialize, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct PaginationQuery {
-    #[validate(range(min = 0, max = 10_000))]
-    offset: Option<i64>,
-    #[validate(range(min = 1, max = 100))]
-    limit: Option<i64>,
-    #[validate(length(max = 200))]
-    search: Option<String>,
-    #[serde(alias = "sort_by")]
-    order_by: Option<String>,
-    #[serde(alias = "sort_order")]
-    order_direction: Option<OrderDirection>,
-}
-
-static USERNAME_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap());
-static SLUG_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-zA-Z0-9-]+$").unwrap());
-static TAG_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap());
 
 pub async fn create_post(
     State(pool): State<DbPool>,
@@ -114,21 +40,6 @@ pub async fn create_post(
         "Successfully created post",
         post,
     )))
-}
-
-fn map_comment_error(err: services::comment::CommentError) -> AppError {
-    match err {
-        services::comment::CommentError::Db(err) => AppError::from(err),
-        services::comment::CommentError::PostNotFound => {
-            AppError::NotFound("Post not found".to_string())
-        }
-        services::comment::CommentError::CommentNotFound => {
-            AppError::NotFound("Comment not found".to_string())
-        }
-        services::comment::CommentError::NotOwner => {
-            AppError::Forbidden("You are not the comment author".to_string())
-        }
-    }
 }
 
 fn map_post_view_error(err: services::post_view::PostViewError) -> AppError {
@@ -165,29 +76,12 @@ async fn ensure_author(pool: &DbPool, post_id: Uuid, auth_user: &AuthUser) -> Re
     }
 }
 
-fn get_pagination_params(
-    query: &PaginationQuery,
-) -> (
-    i64,
-    i64,
-    Option<&str>,
-    Option<&str>,
-    Option<services::post::SortDirection>,
-) {
-    let offset = query.offset.unwrap_or(0);
-    let limit = query.limit.unwrap_or(10);
-    let search = query.search.as_deref();
-    let order_by = query.order_by.as_deref();
-    let order_direction = query.order_direction.map(Into::into);
-    (offset, limit, search, order_by, order_direction)
-}
-
 pub async fn get_posts(
     State(pool): State<DbPool>,
-    Valid(query): Valid<Query<PaginationQuery>>,
+    Valid(query): Valid<Query<PostPaginationQuery>>,
 ) -> Result<Json<ApiResponse<Vec<Post>>>, AppError> {
     let client = pool;
-    let (offset, limit, search, order_by, order_direction) = get_pagination_params(&query);
+    let (offset, limit, search, order_by, order_direction) = post_pagination_params(&query);
 
     let (posts, total) =
         services::post::get_all_posts(&client, offset, limit, search, order_by, order_direction)
@@ -240,19 +134,13 @@ pub async fn get_posts_for_sitemap(
     )))
 }
 
-#[derive(Deserialize, Validate)]
-pub struct TagPath {
-    #[validate(length(min = 1, max = 50), regex(path = *TAG_RE))]
-    pub tag: String,
-}
-
 pub async fn get_posts_by_tag(
     State(pool): State<DbPool>,
     Valid(Path(tag_path)): Valid<Path<TagPath>>,
-    Valid(query): Valid<Query<PaginationQuery>>,
+    Valid(query): Valid<Query<PostPaginationQuery>>,
 ) -> Result<Json<ApiResponse<Vec<Post>>>, AppError> {
     let client = pool;
-    let (offset, limit, search, order_by, order_direction) = get_pagination_params(&query);
+    let (offset, limit, search, order_by, order_direction) = post_pagination_params(&query);
 
     let (posts, total) = services::post::get_posts_by_tag(
         &client,
@@ -305,7 +193,7 @@ pub async fn get_post_views(
     State(pool): State<DbPool>,
     _auth_user: AuthUser,
     Valid(Path(params)): Valid<Path<PostIdPath>>,
-    Valid(query): Valid<Query<PaginationQuery>>,
+    Valid(query): Valid<Query<PostPaginationQuery>>,
 ) -> Result<Json<ApiResponse<Vec<crate::models::post_view::PostViewResponse>>>, AppError> {
     let offset = query.offset.unwrap_or(0);
     let limit = query.limit.unwrap_or(10);
@@ -384,7 +272,7 @@ pub async fn unlike_post(
 pub async fn get_post_likes(
     State(pool): State<DbPool>,
     Valid(Path(params)): Valid<Path<PostIdPath>>,
-    Valid(query): Valid<Query<PaginationQuery>>,
+    Valid(query): Valid<Query<PostPaginationQuery>>,
 ) -> Result<Json<ApiResponse<crate::models::post_like::PostLikeListResponse>>, AppError> {
     let offset = query.offset.unwrap_or(0);
     let limit = query.limit.unwrap_or(10);
@@ -427,92 +315,13 @@ pub async fn check_user_liked(
     )))
 }
 
-pub async fn create_comment(
-    State(pool): State<DbPool>,
-    auth_user: AuthUser,
-    Valid(Path(params)): Valid<Path<PostIdPath>>,
-    Valid(Json(req)): Valid<Json<CommentRequest>>,
-) -> Result<
-    (
-        axum::http::StatusCode,
-        Json<ApiResponse<crate::models::comment::CommentResponse>>,
-    ),
-    AppError,
-> {
-    let comment = services::comment::create_comment(&pool, params.id, req.text, auth_user.id)
-        .await
-        .map_err(map_comment_error)?;
-
-    Ok((
-        axum::http::StatusCode::CREATED,
-        Json(ApiResponse::success_with_message(
-            "Comment created successfully",
-            comment,
-        )),
-    ))
-}
-
-pub async fn get_comments_by_post_id(
-    State(pool): State<DbPool>,
-    Valid(Path(params)): Valid<Path<PostIdPath>>,
-) -> Result<Json<ApiResponse<Vec<crate::models::comment::CommentResponse>>>, AppError> {
-    let comments = services::comment::get_comments_by_post_id(&pool, params.id)
-        .await
-        .map_err(map_comment_error)?;
-
-    Ok(Json(ApiResponse::success_with_message(
-        "Comments fetched successfully",
-        comments,
-    )))
-}
-
-pub async fn update_comment(
-    State(pool): State<DbPool>,
-    auth_user: AuthUser,
-    Valid(Path(params)): Valid<Path<CommentPath>>,
-    Valid(Json(req)): Valid<Json<CommentRequest>>,
-) -> Result<Json<ApiResponse<crate::models::comment::CommentResponse>>, AppError> {
-    let _post_id = params.id;
-    let comment =
-        services::comment::update_comment(&pool, params.comment_id, req.text, auth_user.id)
-            .await
-            .map_err(map_comment_error)?;
-
-    Ok(Json(ApiResponse::success_with_message(
-        "Comment updated successfully",
-        comment,
-    )))
-}
-
-pub async fn delete_comment(
-    State(pool): State<DbPool>,
-    auth_user: AuthUser,
-    Valid(Path(params)): Valid<Path<CommentPath>>,
-) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    let _post_id = params.id;
-    services::comment::delete_comment(&pool, params.comment_id, auth_user.id)
-        .await
-        .map_err(map_comment_error)?;
-
-    Ok(Json(ApiResponse::success_with_message(
-        "Comment deleted successfully",
-        serde_json::Value::Null,
-    )))
-}
-
-#[derive(Deserialize, Validate)]
-pub struct UsernamePath {
-    #[validate(length(min = 1, max = 50), regex(path = *USERNAME_RE))]
-    pub username: String,
-}
-
 pub async fn get_posts_by_username(
     State(pool): State<DbPool>,
     Valid(Path(params)): Valid<Path<UsernamePath>>,
-    Valid(query): Valid<Query<PaginationQuery>>,
+    Valid(query): Valid<Query<PostPaginationQuery>>,
 ) -> Result<Json<ApiResponse<Vec<Post>>>, AppError> {
     let client = pool;
-    let (offset, limit, _, _, _) = get_pagination_params(&query);
+    let (offset, limit, _, _, _) = post_pagination_params(&query);
 
     let (posts, total) =
         services::post::get_posts_by_username(&client, &params.username, offset, limit).await?;
@@ -524,17 +333,6 @@ pub async fn get_posts_by_username(
         limit,
         offset,
     )))
-}
-
-#[derive(Deserialize, Validate)]
-pub struct PostIdPath {
-    pub id: uuid::Uuid,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct CommentPath {
-    pub id: uuid::Uuid,
-    pub comment_id: uuid::Uuid,
 }
 
 pub async fn get_post(
@@ -598,14 +396,6 @@ pub async fn delete_post(
     }
 }
 
-#[derive(Deserialize, Validate)]
-pub struct PostPath {
-    #[validate(length(min = 1, max = 50), regex(path = *USERNAME_RE))]
-    pub username: String,
-    #[validate(length(min = 1, max = 100), regex(path = *SLUG_RE))]
-    pub slug: String,
-}
-
 pub async fn get_post_by_username_and_slug(
     State(pool): State<DbPool>,
     Valid(Path(params)): Valid<Path<PostPath>>,
@@ -638,14 +428,6 @@ pub fn routes() -> Router<DbPool> {
             get(get_post_by_username_and_slug),
         )
         .route("/api/posts/tag/{tag}", get(get_posts_by_tag))
-        .route(
-            "/api/posts/{id}/comments",
-            get(get_comments_by_post_id).post(create_comment),
-        )
-        .route(
-            "/api/posts/{id}/comments/{comment_id}",
-            put(update_comment).delete(delete_comment),
-        )
         .route("/api/posts/{id}/view", post(record_view))
         .route("/api/posts/{id}/views", get(get_post_views))
         .route("/api/posts/{id}/view-stats", get(get_post_view_stats))

@@ -1,5 +1,7 @@
 use crate::auth::{AdminUser, AuthUser};
 use crate::database::DbPool;
+use crate::dto::common::{PaginationQuery, UsernamePath};
+use crate::dto::user::{FollowRequest, UserIdPath};
 use crate::error::AppError;
 use crate::models::user::UserResponse;
 use crate::models::user_follow::{FollowResponse, FollowStats};
@@ -11,37 +13,6 @@ use axum::{
     routing::{delete, get, post},
 };
 use axum_valid::Valid;
-use once_cell::sync::Lazy;
-use regex::Regex;
-use serde::Deserialize;
-use uuid::Uuid;
-use validator::Validate;
-
-static USERNAME_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap());
-
-#[derive(Deserialize, Validate)]
-pub struct PaginationQuery {
-    #[validate(range(min = 0, max = 10_000))]
-    offset: Option<i64>,
-    #[validate(range(min = 1, max = 100))]
-    limit: Option<i64>,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct UserIdPath {
-    id: Uuid,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct UsernamePath {
-    #[validate(length(min = 1, max = 50), regex(path = *USERNAME_RE))]
-    username: String,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct FollowRequest {
-    pub user_id: Uuid,
-}
 
 fn map_follow_error(err: services::user_follow::UserFollowError) -> AppError {
     match err {

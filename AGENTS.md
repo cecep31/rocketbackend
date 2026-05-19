@@ -1,161 +1,50 @@
-# AGENTS.md - Axum Backend Project
+# AGENTS.md
 
-## Project Overview
-
-Rust web backend with Axum v0.8.8, PostgreSQL, and REST API for blog post management. Uses Rust edition 2024.
-
-## Build, Lint, and Test Commands
+## Commands
 
 ```bash
-# Build and run
-cargo build
-cargo build --release
-cargo run
-
-# Testing
-cargo test                          # all tests
-cargo test test_name                # single test (exact match)
-cargo test test_pattern             # pattern match
-cargo test -- --nocapture           # with output
-
-# Linting and formatting
-cargo clippy                        # linter
-cargo clippy --fix                  # auto-apply fixes
-cargo check                         # check without building
-cargo fmt                           # format
-cargo fmt --check                   # check formatting
+cargo check              # fast type-check
+cargo test                # run tests
+cargo clippy              # lint
+cargo fmt                 # format
+cargo run                 # dev server (requires running PostgreSQL + .env)
 ```
 
-## Code Style Guidelines
+Recommended order: `cargo fmt && cargo clippy && cargo test`
 
-### General
-- Write idiomatic Rust 2024 edition code
-- Prefer explicit error handling over unwrap/panic
-- Use async/await for all I/O operations
+## Setup
 
-### Imports and Modules
-- Organize: `models/`, `handlers/`, `services/`, `database.rs`
-- Each module has `mod.rs` exporting submodules
-- Use `crate::` for absolute imports
-- Group imports: std, external, internal
-- Example:
-  ```rust
-  use std::collections::HashMap;
-  use tokio_postgres::Client;
-  use crate::models::post::Post;
-  ```
+- Copy `.env.example` to `.env` and configure `DATABASE_URL`. A running PostgreSQL instance is required.
+- `JwtConfig` is initialized once at startup via `OnceLock`; do not attempt to set it again after `main` runs.
+- Config is loaded from env vars (via `dotenvy`), not from a config file. All env keys are documented in `src/config.rs`.
 
-### Naming Conventions
-- **Files**: snake_case (`post_handler.rs`)
-- **Structs**: PascalCase (`Post`, `ApiResponse`)
-- **Functions**: snake_case (`get_all_posts`)
-- **Variables**: snake_case (`db_conn`, `post_id`)
-- **Constants**: SCREAMING_SNAKE_CASE with `const`
-- **Types**: Explicit in function signatures
+## Architecture
 
-### Formatting
-- Default Rustfmt settings (4 spaces, 100 char width)
-- Opening braces on same line
-- Trailing commas in multi-line expressions
+**Stack**: Axum 0.8 + SeaORM 1.1 + Tokio + PostgreSQL. Edition 2024.
 
-### Error Handling
-- Return `Result<T, tokio_postgres::Error>` for DB operations
-- Use `?` for error propagation
-- `AppError` enum: Database, Pool, NotFound, BadRequest, InternalServerError
-- Implement `IntoResponse` returning JSON: `{"success": false, "error": "...", "data": null}`
-- Handle `deadpool_postgres::PoolError` separately
-- Log with `tracing::error!` for background errors
+**Layered flow**: `handlers/` (HTTP, extraction, validation) → `services/` (business logic, DB queries via SeaORM) → `entities/` (SeaORM entity definitions) / `models/` (app-level DTOs and response types).
 
-### Logging and Tracing
-- Initialize with `tracing_subscriber::registry()` and EnvFilter
-- Default level: info (tower_http: info, axum::rejection: trace)
-- Use `tracing::info!`, `tracing::error!` macros
+- `src/entities/` — SeaORM `DeriveEntityModel` structs mirroring DB tables. Do not confuse with `models/`.
+- `src/models/` — Application-level types (response shapes, view models) that map from entity rows.
+- `src/auth.rs` — `AuthUser` (JWT Bearer) and `AdminUser` (super-admin guard) Axum extractors.
+- `src/response.rs` — `ApiResponse<T>` wrapper: `{ success, message, data, error, meta }`.
+- `src/error.rs` — `AppError` enum implementing `IntoResponse`; all errors flow through this.
+- `src/rate_limit.rs` — In-memory rate limiter (not Redis-backed).
 
-### Async and Concurrency
-- Use `tokio-postgres` with deadpool connection pooling
-- `DbPool` (deadpool::Pool) in Axum state
-- `State<DbPool>` for DI in handlers
-- Get client: `pool.get().await?`
+## Conventions
 
-### Types and Serialization
-- `serde::{Serialize, Deserialize}` for all serializable types
-- `Json<T>` from axum for responses
-- `uuid::Uuid` for IDs, `chrono::DateTime<Utc>` for timestamps
-- Models implement `From<&Row>` for database deserialization
-- Clone derives acceptable for simple types
+- Every handler accepting input uses `Valid<Json<T>>` or `Valid<Query<T>>` with `validator::Validate` derive.
+- Error propagation uses `?`; services return `Result<_, DbErr>` or `Result<_, AppError>`.
+- API responses always use `ApiResponse::success_with_message` or `ApiResponse::with_meta_message` for paginated data.
+- Route registration uses `Router::merge` per domain in `handlers/mod.rs`.
+- No migrations in this repo — manage DB schema externally. Entity files must stay in sync with the actual schema.
 
-### Axum Framework Patterns
-- Routes under `/v1` prefix
-- `Query<T>` for query params, `Json<T>` for request bodies
-- CORS: `CorsLayer::permissive()`
-- Trace logging: `TraceLayer::new_for_http()`
-- Merge routers with `.merge(sub_router)`
-- Handler returns: `Result<Json<ApiResponse<T>>, AppError>`
+## Docker
 
-### API Response Patterns
-- `ApiResponse<T>` wrapper: `success: bool`, `data: Option<T>`, `meta: Meta`
-- Meta contains: `total_items`, `offset`, `limit`, `total_pages`
-- Success: `Json(ApiResponse::success(data))`
-- With pagination: `Json(ApiResponse::with_meta(data, total, limit, offset))`
-- Error: `AppError` with `IntoResponse`
+Multi-stage Alpine build (`rust:1-alpine` → `alpine:3.19`). Pushes to `cecep31/axumbackend` on Docker Hub via CI (`.github/workflows/docker-build.yml`). Only triggers on `main` branch pushes and version tags.
 
-### Database
-- Parameterized queries: `$1`, `$2`
-- Use `JOIN` for related data (e.g., `posts` JOIN `users`)
-- Escape LIKE patterns: replace `\`, `%`, `_` to prevent injection
-- Validate `order_by` fields against whitelist using match
-- Return `Result<(Vec<T>, i64), tokio_postgres::Error>` (data + total count)
-- Batch fetch tags to avoid N+1 queries using `ANY($1)` array parameter
+## Known Gotchas
 
-### Validation
-- Use `axum-valid` with `validator` for request validation
-- Wrap extractors with `Valid`: `Valid(Query<T>)`, `Valid(Path<T>)`
-- Define validation rules using derive macro:
-  ```rust
-  #[derive(Deserialize, Validate)]
-  pub struct PaginationQuery {
-      #[validate(range(min = 0, max = 10_000))]
-      offset: Option<i64>,
-      #[validate(range(min = 1, max = 100))]
-      limit: Option<i64>,
-  }
-  ```
-- Use regex validation for path parameters with `once_cell::Lazy`
-
-### Security
-- Use `.env` files with `dotenvy` for secrets
-- Validate all query parameters using `axum-valid`
-- Escape LIKE pattern characters to prevent injection
-- Parameterized queries prevent SQL injection
-
-### Testing
-- Tests in `#[cfg(test)]` module in same file
-- Mock database connections for unit tests
-
-### Git Workflow
-- Imperative commit messages
-- No force pushes to main
-- Run `cargo clippy` and `cargo fmt` before committing
-- Never commit: `.env`, `database.db`, `target/`
-
-## Key Files
-
-| Component | Location |
-|-----------|----------|
-| Entry point | `src/main.rs` |
-| Database | `src/database.rs` |
-| Error handling | `src/error.rs` |
-| API response | `src/response.rs` |
-| Config | `src/config.rs`, `.env` |
-| Models | `src/models/{post,user,tag}.rs` |
-| Handlers | `src/handlers/{health,post,tag}.rs` |
-| Services | `src/services/{post,tag}.rs` |
-
-## Environment Variables
-
-```bash
-DATABASE_URL=host=localhost user=postgres password=postgres dbname=axumbackend
-PORT=8000
-DB_POOL_MAX_SIZE=20
-DB_POOL_CONNECTION_TIMEOUT=30
-```
+- `DbPool` is a type alias for `DatabaseConnection` (SeaORM), not a separate connection pool library.
+- `config.rs` doc comments mention `DB_POOL_MAX_LIFETIME` and `DB_POOL_IDLE_TIMEOUT` env vars, but they are **not implemented** — only `DB_POOL_MAX_SIZE` and `DB_POOL_CONNECTION_TIMEOUT` are actually parsed.
+- Pagination query params differ per endpoint (some use `PaginationQuery`, others use `limit`/`offset` directly); check individual handlers.

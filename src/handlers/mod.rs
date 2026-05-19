@@ -1,5 +1,6 @@
 mod auth;
 mod bookmark;
+mod comment;
 mod health;
 mod holding;
 mod notification;
@@ -18,6 +19,7 @@ pub fn create_router() -> Router<DbPool> {
         .merge(health::routes())
         .merge(auth::routes())
         .merge(bookmark::routes())
+        .merge(comment::routes())
         .merge(holding::routes())
         .merge(notification::routes())
         .merge(post::routes())

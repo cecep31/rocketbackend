@@ -1,5 +1,9 @@
 use crate::auth::AuthUser;
 use crate::database::DbPool;
+use crate::dto::holding::{
+    CompareQuery, CreateHoldingRequest, DuplicateHoldingRequest, HoldingPath, HoldingQuery,
+    MonthlyQuery, SummaryQuery, TrendsQuery, UpdateHoldingRequest,
+};
 use crate::error::AppError;
 use crate::models::holding::{
     DuplicateResultItem, HoldingMonthComparisonResponse, HoldingMonthlyDataResponse,
@@ -14,121 +18,6 @@ use axum::{
     routing::{get, post},
 };
 use axum_valid::Valid;
-use serde::Deserialize;
-use validator::Validate;
-
-#[derive(Deserialize, Validate)]
-pub struct HoldingPath {
-    id: i64,
-}
-
-#[derive(Deserialize, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct HoldingQuery {
-    #[validate(range(min = 1, max = 12))]
-    month: Option<i32>,
-    #[validate(range(min = 2000))]
-    year: Option<i32>,
-    sort_by: Option<String>,
-    order: Option<String>,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct CreateHoldingRequest {
-    #[validate(length(min = 1))]
-    name: String,
-    symbol: Option<String>,
-    #[validate(length(min = 1))]
-    platform: String,
-    holding_type_id: i16,
-    #[validate(length(equal = 3))]
-    currency: String,
-    invested_amount: String,
-    current_value: String,
-    units: Option<String>,
-    avg_buy_price: Option<String>,
-    current_price: Option<String>,
-    last_updated: Option<String>,
-    notes: Option<String>,
-    #[validate(range(min = 1, max = 12))]
-    month: i32,
-    #[validate(range(min = 2000))]
-    year: i32,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct UpdateHoldingRequest {
-    #[validate(length(min = 1))]
-    name: Option<String>,
-    symbol: Option<String>,
-    #[validate(length(min = 1))]
-    platform: Option<String>,
-    holding_type_id: Option<i16>,
-    #[validate(length(equal = 3))]
-    currency: Option<String>,
-    invested_amount: Option<String>,
-    current_value: Option<String>,
-    units: Option<String>,
-    avg_buy_price: Option<String>,
-    current_price: Option<String>,
-    last_updated: Option<String>,
-    notes: Option<String>,
-    #[validate(range(min = 1, max = 12))]
-    month: Option<i32>,
-    #[validate(range(min = 2000))]
-    year: Option<i32>,
-}
-
-#[derive(Deserialize, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct DuplicateHoldingRequest {
-    #[validate(range(min = 1, max = 12))]
-    from_month: i32,
-    #[validate(range(min = 1900, max = 2100))]
-    from_year: i32,
-    #[validate(range(min = 1, max = 12))]
-    to_month: i32,
-    #[validate(range(min = 1900, max = 2100))]
-    to_year: i32,
-    #[serde(default)]
-    overwrite: bool,
-}
-
-#[derive(Deserialize, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct SummaryQuery {
-    #[validate(range(min = 1, max = 12))]
-    month: Option<i32>,
-    #[validate(range(min = 2000))]
-    year: Option<i32>,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct TrendsQuery {
-    years: Option<String>,
-}
-
-#[derive(Deserialize, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct CompareQuery {
-    #[validate(range(min = 1, max = 12))]
-    from_month: Option<i32>,
-    from_year: Option<i32>,
-    #[validate(range(min = 1, max = 12))]
-    to_month: Option<i32>,
-    to_year: Option<i32>,
-}
-
-#[derive(Deserialize, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct MonthlyQuery {
-    #[validate(range(min = 1, max = 12))]
-    start_month: Option<i32>,
-    start_year: Option<i32>,
-    #[validate(range(min = 1, max = 12))]
-    end_month: Option<i32>,
-    end_year: Option<i32>,
-}
 
 fn map_holding_error(err: HoldingError) -> AppError {
     match err {

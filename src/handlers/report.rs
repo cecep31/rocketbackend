@@ -1,9 +1,8 @@
 use crate::auth::AdminUser;
 use crate::database::DbPool;
+use crate::dto::report::{OverviewReport, ReportQuery, date_range};
 use crate::error::AppError;
-use crate::models::report::{
-    EngagementMetricsResponse, OverviewStatsResponse, PostReportResponse, UserReportResponse,
-};
+use crate::models::report::{EngagementMetricsResponse, PostReportResponse, UserReportResponse};
 use crate::response::ApiResponse;
 use crate::services;
 use axum::{
@@ -12,31 +11,6 @@ use axum::{
     routing::get,
 };
 use axum_valid::Valid;
-use serde::{Deserialize, Serialize};
-use validator::Validate;
-
-#[derive(Deserialize, Validate)]
-#[serde(rename_all = "camelCase")]
-pub struct ReportQuery {
-    start_date: Option<String>,
-    end_date: Option<String>,
-    #[validate(range(min = 1, max = 100))]
-    limit: Option<i64>,
-    tag_id: Option<i32>,
-}
-
-#[derive(Serialize)]
-pub struct OverviewReport {
-    overview: OverviewStatsResponse,
-    engagement: EngagementMetricsResponse,
-}
-
-fn date_range(query: &ReportQuery) -> services::report::DateRange<'_> {
-    services::report::DateRange {
-        start_date: query.start_date.as_deref(),
-        end_date: query.end_date.as_deref(),
-    }
-}
 
 pub async fn get_overview(
     State(pool): State<DbPool>,

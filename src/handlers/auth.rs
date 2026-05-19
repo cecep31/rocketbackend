@@ -1,5 +1,9 @@
 use crate::auth::AuthUser;
 use crate::database::DbPool;
+use crate::dto::auth::{
+    AvailabilityResponse, CheckUsernameRequest, EmailPath, LoginRequest, LogoutRequest,
+    RefreshTokenRequest, RegisterRequest,
+};
 use crate::error::AppError;
 use crate::rate_limit::{RateLimiter, rate_limit};
 use crate::response::ApiResponse;
@@ -12,58 +16,7 @@ use axum::{
     routing::{get, post},
 };
 use axum_valid::Valid;
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use validator::Validate;
-
-#[derive(Deserialize, Validate)]
-pub struct RegisterRequest {
-    #[validate(email)]
-    email: String,
-    #[validate(length(min = 3, max = 30))]
-    username: String,
-    #[validate(length(min = 8))]
-    password: String,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct LoginRequest {
-    #[validate(length(min = 1))]
-    identifier: String,
-    #[validate(length(min = 6))]
-    password: String,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct CheckUsernameRequest {
-    #[validate(length(min = 3, max = 30))]
-    username: String,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct RefreshTokenRequest {
-    #[validate(length(min = 1))]
-    refresh_token: String,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct LogoutRequest {
-    #[validate(length(min = 1))]
-    refresh_token: String,
-}
-
-#[derive(Deserialize, Validate)]
-pub struct EmailPath {
-    #[validate(email)]
-    email: String,
-}
-
-#[derive(Serialize)]
-pub struct AvailabilityResponse {
-    username: Option<String>,
-    email: Option<String>,
-    available: bool,
-}
 
 fn user_agent(headers: &HeaderMap) -> Option<String> {
     headers
